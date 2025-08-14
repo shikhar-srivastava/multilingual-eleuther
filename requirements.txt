@@ -1,0 +1,4 @@
+torch
+transformers
+bitsandbytes
+importlib_metadata

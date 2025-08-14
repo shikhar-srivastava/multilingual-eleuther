@@ -1,0 +1,120 @@
+{
+  "models": {
+    "moh_llama3_8b": {
+      "model_name": "Chat-UniVi/MoH-LLaMA3-8B",
+      "model_type": "moe_attention",
+      "source": "huggingface",
+      "description": "MoH-LLaMA3-8B - Mixture-of-Head attention model using only 75% of attention heads",
+      "paper_reference": "MoH: Multi-Head Attention as Mixture-of-Head Attention (Jin et al., 2024)",
+      "arxiv": "2410.11842",
+      "parameters": "8B",
+      "architecture": "llama_moh",
+      "special_analysis": "attention_head_routing",
+      "baseline_model": "llama3_8b_baseline",
+      "requires_trust_remote_code": true
+    },
+    "llama3_8b_baseline": {
+      "model_name": "meta-llama/Meta-Llama-3-8B",
+      "model_type": "standard",
+      "source": "huggingface",
+      "description": "LLaMA-3 8B - baseline model for MoH comparison",
+      "paper_reference": "Original LLaMA-3 baseline for MoH comparison",
+      "parameters": "8B",
+      "architecture": "llama",
+      "baseline_for": "moh_llama3_8b"
+    },
+    "dcformer_2_8b": {
+      "model_name": "Caiyun-AI/DCFormer-2.8B",
+      "model_type": "dynamic_attention",
+      "source": "huggingface",
+      "description": "DCFormer-2.8B - Dynamically Composable Multi-Head Attention model",
+      "paper_reference": "Improving Transformers with Dynamically Composable Multi-Head Attention (Yang et al., 2024)",
+      "arxiv": "2405.08553",
+      "parameters": "2.8B",
+      "architecture": "dcformer",
+      "special_analysis": "dynamic_head_composition",
+      "baseline_model": "pythia_2_8b_baseline",
+      "requires_trust_remote_code": true
+    },
+    "pythia_2_8b_baseline": {
+      "model_name": "EleutherAI/pythia-2.8b",
+      "model_type": "standard",
+      "source": "huggingface",
+      "description": "Pythia 2.8B - baseline model for DCFormer comparison",
+      "paper_reference": "Pythia baseline for DCFormer comparison",
+      "parameters": "2.8B",
+      "architecture": "gpt_neox",
+      "baseline_for": "dcformer_2_8b"
+    }
+  },
+  "analysis_configurations": {
+    "moh_comparison": {
+      "models": ["moh_llama3_8b", "llama3_8b_baseline"],
+      "focus": "mixture_of_heads_analysis",
+      "metrics": ["head_routing_patterns", "attention_head_utilization", "head_specialization", "routing_entropy", "performance_vs_efficiency"],
+      "max_batches": 150,
+      "track_every": 10,
+      "special_configs": {
+        "compare_head_usage": true,
+        "track_routing_decisions": true,
+        "analyze_head_efficiency": true
+      }
+    },
+    "dcformer_comparison": {
+      "models": ["dcformer_2_8b", "pythia_2_8b_baseline"],
+      "focus": "dynamic_attention_composition",
+      "metrics": ["dynamic_head_composition", "attention_patterns", "compositional_efficiency", "head_interactions"],
+      "max_batches": 150,
+      "track_every": 10,
+      "special_configs": {
+        "track_composition_patterns": true,
+        "analyze_head_dynamics": true,
+        "measure_compositional_benefits": true
+      }
+    },
+    "blow_up_detection": {
+      "models": ["moh_llama3_8b", "llama3_8b_baseline", "dcformer_2_8b", "pythia_2_8b_baseline"],
+      "focus": "numerical_stability_comparison",
+      "metrics": ["inf_detection", "nan_detection", "activation_spikes", "gradient_norms", "numerical_stability"],
+      "max_batches": 200,
+      "track_every": 5,
+      "special_configs": {
+        "precision_analysis": true,
+        "spike_detection": true,
+        "stability_comparison": true
+      }
+    }
+  },
+  "dataset_configs": {
+    "c4_standard": {
+      "dataset": "c4",
+      "split": "validation",
+      "batch_size": 8,
+      "max_length": 512,
+      "streaming": true
+    },
+    "c4_long_context": {
+      "dataset": "c4", 
+      "split": "validation",
+      "batch_size": 4,
+      "max_length": 2048,
+      "streaming": true
+    }
+  },
+  "tracking_configs": {
+    "detailed": {
+      "track_weights": true,
+      "track_activations": true,
+      "track_gradients": false,
+      "track_attention": true,
+      "save_plots": true
+    },
+    "basic": {
+      "track_weights": false,
+      "track_activations": true,
+      "track_gradients": false, 
+      "track_attention": false,
+      "save_plots": false
+    }
+  }
+}
