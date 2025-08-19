@@ -1,0 +1,37 @@
+{
+  "eng_latn": {
+    "byte_premium": 1.0,
+    "train_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/eng_latn_1.0.txt",
+    "train_bytes": 1073741824,
+    "eval_lines": 8000,
+    "eval_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/eng_latn_1.0_eval.txt"
+  },
+  "tha_thai": {
+    "byte_premium": 2.74,
+    "train_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/tha_thai_2.74.txt",
+    "train_bytes": 2942052597,
+    "eval_lines": 21920,
+    "eval_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/tha_thai_2.74_eval.txt"
+  },
+  "urd_arab": {
+    "byte_premium": 1.71,
+    "train_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/urd_arab_1.71.txt",
+    "train_bytes": 1836098519,
+    "eval_lines": 13680,
+    "eval_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/urd_arab_1.71_eval.txt"
+  },
+  "amh_ethi": {
+    "byte_premium": 1.72,
+    "train_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/amh_ethi_1.72.txt",
+    "train_bytes": 1846835937,
+    "eval_lines": 13760,
+    "eval_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/amh_ethi_1.72_eval.txt"
+  },
+  "vie_latn": {
+    "byte_premium": 1.35,
+    "train_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/vie_latn_1.35.txt",
+    "train_bytes": 1449551462,
+    "eval_lines": 10800,
+    "eval_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/vie_latn_1.35_eval.txt"
+  }
+}
