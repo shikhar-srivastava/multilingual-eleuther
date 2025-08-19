@@ -22,7 +22,7 @@ def validate_implementation():
     print("Validating Detailed Head-wise Tracking Implementation")
     print("=" * 60)
     
-    base_dir = "/localdisk/ssrivas9/multilingual-eleuther"
+    base_dir = "/scratch/ssrivas9/multilingual-eleuther"
     all_files_present = True
     
     # Core implementation files

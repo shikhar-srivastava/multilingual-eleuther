@@ -16,10 +16,10 @@ tokenize_fn() {
   local dataset=$1
   local tokenizer_type=$2
   local vocab=$3
-  python /localdisk/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+  python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
     --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
     --split train --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True
-  python /localdisk/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+  python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
     --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
     --split eval --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True
 }
@@ -31,7 +31,7 @@ for dataset in "${DATASETS[@]}"; do
       tokenize_fn "$dataset" "$tok" "$vocab"
 
       echo "[Train] dataset=$dataset, tok=$tok, vocab=$vocab"
-      bash /localdisk/ssrivas9/multilingual-eleuther/monolingual_130m.sh pre "$dataset" "$vocab" "$tok" 6 29510
+      bash /scratch/ssrivas9/multilingual-eleuther/monolingual_130m.sh pre "$dataset" "$vocab" "$tok" 6 29510
     done
   done
 done

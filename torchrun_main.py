@@ -426,7 +426,7 @@ def parse_args(args):
     parser.add_argument("--monolingual-dataset", type=str, required=True,
                         choices=["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn"],
                         help="Monolingual dataset to use for training. Must be one of: eng_latn, tha_thai, urd_arab, amh_ethi, vie_latn. "
-                             "Files are expected at /localdisk/ssrivas9/catherinearnett/monolingual_training_data/")
+                             "Files are expected at /scratch/ssrivas9/catherinearnett/monolingual_training_data/")
     
     # Hugging Face Hub integration flags
     parser.add_argument("--hf_repo_name", type=str, default=None,
@@ -461,8 +461,8 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
     """
     import math, os, json
     assert monolingual_dataset is not None, "monolingual_dataset is required for eval"
-    tokenized_root = "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
-    bp_index_path = "/localdisk/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
+    tokenized_root = "/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
+    bp_index_path = "/scratch/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
     with open(bp_index_path, 'r', encoding='utf-8') as f:
         bp_index = json.load(f)
     # Use the same tokenizer basename as training to guarantee identical tokenizer/eval path
@@ -470,8 +470,8 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
         tokenizer_basename = args._tokenizer_basename
     else:
         tok_root_map = {
-            "bpe_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
-            "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
+            "bpe_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
+            "unigram_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
         }
         tok_root = tok_root_map[args.tokenizer_type]
         tok_file = (f"bpe_{monolingual_dataset}_{args.tokenizer_vocabulary}_300mb_unscaled.json"
@@ -567,7 +567,7 @@ def main(args):
     logger.info("*" * 40)
     
     # Resolve pre-tokenized paths (BP index) and tokenizer settings
-    bp_index_path = "/localdisk/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
+    bp_index_path = "/scratch/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
     bp_index = None
     if os.path.exists(bp_index_path):
         try:
@@ -580,8 +580,8 @@ def main(args):
     # Resolve tokenizer path based on tokenizer_type and tokenizer_vocabulary if available
     resolved_tokenizer_name = args.tokenizer_name
     tok_root_map = {
-        "bpe_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
-        "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
+        "bpe_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
+        "unigram_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
     }
     if args.tokenizer_type in tok_root_map:
         tok_root = tok_root_map[args.tokenizer_type]
@@ -642,7 +642,7 @@ def main(args):
         tokenizer = PreTrainedTokenizerFast(tokenizer_file=resolved_tokenizer_name)
     
     # Use pre-tokenized ints-per-line
-    tokenized_root = "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
+    tokenized_root = "/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
     tokenizer_basename = None
     if os.path.isfile(resolved_tokenizer_name):
         tokenizer_basename = os.path.splitext(os.path.basename(resolved_tokenizer_name))[0]

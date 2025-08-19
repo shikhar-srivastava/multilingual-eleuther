@@ -7,7 +7,7 @@ Tokenize BP train/eval splits using the same approach as the reference script:
 - Truncate to max_seq_len and write a single line of space-separated token ids
 - No padding on disk
 
-This mirrors: /localdisk/ssrivas9/word-acquisition-language-models/scripts/tokenize_dataset.py
+This mirrors: /scratch/ssrivas9/word-acquisition-language-models/scripts/tokenize_dataset.py
 """
 
 import argparse
@@ -22,8 +22,8 @@ VALID_VOCABS = {8192, 16384, 32768, 49152, 65536, 81920, 98304, 114688, 262144}
 DATASETS = ["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn"]
 
 TOKENIZER_ROOTS = {
-    "bpe_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
-    "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
+    "bpe_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
+    "unigram_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
 }
 
 
@@ -162,8 +162,8 @@ def main() -> None:
     parser.add_argument("--max_segments", type=int, default=-1)
     parser.add_argument("--prepend_cls", type=str, default="True")
     parser.add_argument("--include_sep", type=str, default="True")
-    parser.add_argument("--index_path", default="/localdisk/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json")
-    parser.add_argument("--output_root", default="/localdisk/ssrivas9/catherinearnett/monolingual_training_data_tokenized")
+    parser.add_argument("--index_path", default="/scratch/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json")
+    parser.add_argument("--output_root", default="/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized")
     args = parser.parse_args()
 
     vocab = int(args.tokenizer_vocabulary)
