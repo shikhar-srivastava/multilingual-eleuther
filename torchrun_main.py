@@ -631,15 +631,11 @@ def main(args):
             json.dump(special_map, f)
         return out_dir
 
-    try:
-        load_path = resolved_tokenizer_name
-        if isinstance(load_path, str) and load_path.endswith('.json') and os.path.isfile(load_path):
-            load_path = _prepare_tokenizer_dir(load_path)
-        tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True)
-    except Exception as e:
-        logger.warning(f"AutoTokenizer load failed: {e}; trying PreTrainedTokenizerFast from local file")
-        from transformers import PreTrainedTokenizerFast
-        tokenizer = PreTrainedTokenizerFast(tokenizer_file=resolved_tokenizer_name)
+    load_path = resolved_tokenizer_name
+    if isinstance(load_path, str) and load_path.endswith('.json') and os.path.isfile(load_path):
+        load_path = _prepare_tokenizer_dir(load_path)
+    # Enforce AutoTokenizer load; fail loudly on error
+    tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True)
     
     # Use pre-tokenized ints-per-line
     tokenized_root = "/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized"

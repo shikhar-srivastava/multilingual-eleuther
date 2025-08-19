@@ -187,9 +187,7 @@ def main() -> None:
         tokenizer = AutoTokenizer.from_pretrained(prepared_dir, trust_remote_code=True, use_fast=True)
     except Exception as e:
         print(f"Error loading tokenizer with AutoTokenizer: {e}")
-        # Fallback to direct fast tokenizer
-        from transformers import PreTrainedTokenizerFast
-        tokenizer = PreTrainedTokenizerFast(tokenizer_file=tok_path)
+        raise
 
     tokenizer_name = os.path.splitext(os.path.basename(tok_path))[0]
     subdir = os.path.join(args.output_root, tokenizer_name)
