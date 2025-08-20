@@ -13,6 +13,7 @@ This mirrors: /scratch/ssrivas9/word-acquisition-language-models/scripts/tokeniz
 import argparse
 import json
 import os
+import codecs
 from typing import List, Optional
 
 from transformers import AutoTokenizer, AlbertTokenizer
@@ -105,8 +106,8 @@ def tokenize_file(input_path: str, output_path: str, tokenizer, max_seq_len: int
         print(f"File already exists: {output_path}")
         return
 
-    infile = open(input_path, "r", encoding="utf-8")
-    outfile = open(output_path, "w", encoding="utf-8")
+    infile = codecs.open(input_path, "rb", encoding="utf-8", errors="replace")
+    outfile = codecs.open(output_path, "wb", encoding="utf-8")
     example_count = 0
     line_count = 0
     stored_lines: List[str] = []
