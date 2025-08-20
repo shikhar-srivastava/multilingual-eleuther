@@ -14,6 +14,8 @@ import argparse
 import json
 import os
 import codecs
+import shutil
+import subprocess
 from typing import List, Optional
 
 from transformers import AutoTokenizer, AlbertTokenizer
@@ -165,6 +167,8 @@ def main() -> None:
     parser.add_argument("--include_sep", type=str, default="True")
     parser.add_argument("--index_path", default="/scratch/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json")
     parser.add_argument("--output_root", default="/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized")
+    parser.add_argument("--shuffle", type=str, default="auto",
+                        help="Shuffle output lines. 'auto' = shuffle for train only; 'True'/'False' to force.")
     args = parser.parse_args()
 
     vocab = int(args.tokenizer_vocabulary)
@@ -206,6 +210,40 @@ def main() -> None:
     tokenize_file(src_path, out_file, tokenizer, args.max_seq_len,
                   max_examples=max_examples, max_segments=max_segments,
                   prepend_cls=prepend_cls, include_sep=include_sep)
+
+    # Decide whether to shuffle
+    if args.shuffle.lower() in {"true", "false"}:
+        do_shuffle = args.shuffle.lower() == "true"
+    else:
+        # auto: shuffle train, keep eval fixed
+        do_shuffle = args.split == "train"
+
+    def _shuffle_inplace(path: str) -> None:
+        print(f"Shuffling file in-place: {path}")
+        tmp_path = path + ".shuf.tmp"
+        terashuf = shutil.which("terashuf")
+        shuf = shutil.which("shuf")
+        try:
+            if terashuf is not None:
+                with open(tmp_path, "w", encoding="utf-8") as out:
+                    subprocess.run([terashuf, path], check=True, stdout=out)
+            elif shuf is not None:
+                with open(tmp_path, "w", encoding="utf-8") as out:
+                    subprocess.run([shuf, path], check=True, stdout=out)
+            else:
+                print("Warning: Neither 'terashuf' nor 'shuf' found on PATH. Skipping shuffle.")
+                return
+            os.replace(tmp_path, path)
+            print("Shuffle complete.")
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+
+    if do_shuffle:
+        _shuffle_inplace(out_file)
     print("Done.")
 
 

@@ -18,10 +18,10 @@ tokenize_fn() {
   local vocab=$3
   python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
     --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
-    --split train --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True
+    --split train --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True --shuffle True
   python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
     --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
-    --split eval --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True
+    --split eval --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True --shuffle False
 }
 
 for dataset in "${DATASETS[@]}"; do

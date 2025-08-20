@@ -688,6 +688,10 @@ def main(args):
     logger.info(f"  Warmup steps: {warmup_steps:,} ({args.warmup_steps_ratio*100:.1f}%)")
     logger.info(f"  Avg sequences per step: {args.total_batch_size}")
 
+    # Log the dataset size as well to wandb
+    if global_rank == 0:
+        wandb.log({"dataset_size": dataset_size}, step=0)
+
     def create_dataset_for_epoch(epoch_num):
         logger.info("Building IntLineIterableDataset for pre-tokenized input")
         ds = IntLineIterableDataset(file_path=tokenized_train_path, block_size=args.max_length,
@@ -755,7 +759,8 @@ def main(args):
 
     global_step = 0
     update_step = 0
-    beginning_step = 0
+    # Persistent micro-batch counter for gradient accumulation; does not reset at epoch boundaries
+    micro_step = 0
     tokens_seen = 0
     tokens_seen_before = 0
     
@@ -864,20 +869,19 @@ def main(args):
         )
         logger.info(f"Weight tracker initialized: {weight_tracker.get_summary()}")
     
-    layer_wise_flag = False
     if args.optimizer.lower() == "adam":
         optimizer = torch.optim.Adam(trainable_params, lr=args.lr, weight_decay=args.weight_decay)
     else:
         raise ValueError(f"Optimizer {args.optimizer} not supported")
 
-    if not layer_wise_flag:
-        scheduler = training_utils.get_scheculer(
-            optimizer=optimizer,
-            scheduler_type=args.scheduler,
-            num_training_steps=total_training_steps,
-            warmup_steps=warmup_steps,
-            min_lr_ratio=args.min_lr_ratio,
-        )
+    
+    scheduler = training_utils.get_scheculer(
+        optimizer=optimizer,
+        scheduler_type=args.scheduler,
+        num_training_steps=total_training_steps,
+        warmup_steps=warmup_steps,
+        min_lr_ratio=args.min_lr_ratio,
+    )
 
     if not args.single_gpu:
         model: LlamaForCausalLM = torch.nn.parallel.DistributedDataParallel(
@@ -984,8 +988,9 @@ def main(args):
             scaled_loss = loss / args.gradient_accumulation
             scaled_loss.backward()
 
-            # If not yet reached full accumulation, continue to next micro-batch
-            if (epoch_step % args.gradient_accumulation) != 0:
+            # Accumulate gradients across micro-batches using a persistent counter
+            micro_step += 1
+            if micro_step < args.gradient_accumulation:
                 continue
 
             # The below code is only executed during the update step
@@ -997,10 +1002,11 @@ def main(args):
             if global_rank == 0:
                 pbar.update(1)
 
-            if not layer_wise_flag:
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
+            # Reset micro accumulation counter only after performing an optimizer update
+            micro_step = 0
 
             update_step += 1
             epoch_update_step += 1  # Increment epoch update step counter
@@ -1074,7 +1080,7 @@ def main(args):
                 }
                 with open(f"{current_model_directory}/training_state.json", "w") as f:
                     json.dump(training_state_checkpoint, f, indent=4)
-
+                
                 # save wandb related info
                 wandb_info = {
                     "wandb_id": wandb.run.id,
@@ -1082,31 +1088,30 @@ def main(args):
                 with open(f"{args.save_dir}/wandb.json", "w") as f:
                     json.dump(wandb_info, f, indent=4)
 
-        # evaluation
+            # evaluation
             if update_step % args.eval_every == 0:
                 logger.info(f"Performing evaluation at step {update_step}")
                 eval_loss, eval_tokens, _, _ = evaluate_model(
-                    model, tokenizer, pad_idx, global_rank, world_size, device, args.batch_size,
+                    model, tokenizer, pad_idx, global_rank, world_size, device, args.batch_size, 
                     track_bytes=False, monolingual_dataset=args.monolingual_dataset, args=args
                 )
-
+                
                 eval_metrics = {
                     "eval_loss": eval_loss,
                     "eval_perplexity": math.exp(eval_loss) if eval_loss is not None else None,
                     "eval_tokens": eval_tokens,
                 }
-
+                
                 # Add BPB metrics if byte tracking is enabled
                 # (removed: BPB logging)
-
+                
                 if global_rank == 0:
                     wandb.log(eval_metrics, step=global_step)
                 logger.info(f"Eval loss at step {update_step}: {eval_loss}")
 
-            if not layer_wise_flag:
-                lr = optimizer.param_groups[0]["lr"]
-            else:
-                pass
+            
+            lr = optimizer.param_groups[0]["lr"]
+
             tokens_in_update = tokens_seen - tokens_seen_before
             tokens_seen_before = tokens_seen
             # (removed: byte deltas)
@@ -1122,10 +1127,10 @@ def main(args):
                     "throughput_examples": args.total_batch_size / update_time,
                     "throughput_batches": batches_in_update / update_time,
                 }
-
+                
                 # Add byte tracking metrics if enabled
                 # (removed: dataset byte metrics)
-
+                
                 # Log activation distributions if tracking is enabled
                 # Log at first update step (initial state) and then every N update steps
                 if activation_tracker is not None and (update_step == 1 or update_step % args.activation_track_every == 0):
@@ -1143,7 +1148,7 @@ def main(args):
                         )
                     except Exception as e:
                         logger.warning(f"Failed to log activation distributions: {e}")
-
+                
                 # Log weight distributions if tracking is enabled
                 if weight_tracker is not None and (update_step == 1 or update_step % args.weight_track_every == 0):
                     try:
@@ -1155,102 +1160,19 @@ def main(args):
                         )
                     except Exception as e:
                         logger.warning(f"Failed to log weight distributions: {e}")
-
+                
                 # Log byte consumption plots if tracking is enabled
                 # (removed: byte consumption plots)
-
+                
                 wandb.log(metrics_to_log, step=global_step)
             update_time = time.time()
 
             # Continue until the dataloader is exhausted to ensure all lines are consumed
-        
-        # Break out of epoch loop if we've reached max training steps
-        if update_step >= total_training_steps:
-            break
+            
+            # Break out of epoch loop if we've reached max training steps
+            if update_step >= total_training_steps:
+                break
 
-        # Flush leftover micro-batches at end of epoch to ensure all lines contribute.
-        # Adjust gradient magnitude so it matches a full accumulation step.
-        leftover = epoch_step % args.gradient_accumulation
-        if leftover != 0 and update_step < total_training_steps:
-            scale_up = float(args.gradient_accumulation) / float(leftover)
-            for param in trainable_params:
-                if param.grad is not None:
-                    param.grad.data.mul_(scale_up)
-            if args.grad_clipping != 0.0:
-                torch.nn.utils.clip_grad_norm_(trainable_params, args.grad_clipping)
-            if global_rank == 0:
-                pbar.update(1)
-            if not layer_wise_flag:
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-            update_step += 1
-            epoch_update_step += 1
-            # Metrics/logging for the flushed step
-            if not layer_wise_flag:
-                lr = optimizer.param_groups[0]["lr"]
-            tokens_in_update = tokens_seen - tokens_seen_before
-            tokens_seen_before = tokens_seen
-            batches_in_update = args.gradient_accumulation * world_size
-            if global_rank == 0:
-                metrics_to_log = {
-                    "loss": loss.item(),
-                    "lr": lr,
-                    "update_step": update_step,
-                    "tokens_seen": tokens_seen,
-                    "throughput_tokens": tokens_in_update / max(1e-9, (time.time() - update_time)),
-                    "throughput_examples": args.total_batch_size / max(1e-9, (time.time() - update_time)),
-                    "throughput_batches": batches_in_update / max(1e-9, (time.time() - update_time)),
-                }
-                wandb.log(metrics_to_log, step=global_step)
-            # Checkpoint if this flushed step matches plan
-            if (
-                local_step > args.gradient_accumulation
-                and epoch_update_step in checkpoint_steps
-                and global_rank == 0
-            ):
-                checkpoint_name = f"epoch_{current_epoch}_step_{epoch_update_step}"
-                current_model_directory = f"{args.save_dir}/model_{checkpoint_name}"
-                logger.info(
-                    f"Saving checkpoint to {current_model_directory} (Epoch {current_epoch}, Update Step {epoch_update_step}/{steps_per_epoch})"
-                )
-                tokenizer.save_pretrained(current_model_directory)
-                model_to_save = model.module if hasattr(model, 'module') else model
-                if hasattr(model_to_save, 'config'):
-                    model_to_save.config.pad_token_id = tokenizer.pad_token_id
-                    model_to_save.config.vocab_size = len(tokenizer.get_vocab())
-                os.makedirs(args.save_dir, exist_ok=True)
-                model_to_save.save_pretrained(current_model_directory, max_shard_size='100GB')
-                if args.hf_push_checkpoints and args.hf_repo_name:
-                    revision_name = f"checkpoint-{checkpoint_name}"
-                    commit_msg = (
-                        f"Checkpoint at epoch {current_epoch}, step {epoch_update_step} (global update step {update_step})"
-                    )
-                    push_to_huggingface_hub(
-                        model_dir=current_model_directory,
-                        repo_name=args.hf_repo_name,
-                        revision=revision_name,
-                        commit_message=commit_msg,
-                    )
-                optimizer_checkpoint = {
-                    "optimizer": optimizer.state_dict(),
-                    "scheduler": scheduler.state_dict(),
-                    "update_step": update_step,
-                    "global_step": global_step,
-                    "config": run_config,
-                    "wandb": wandb.run.dir,
-                    "dtype": args.dtype,
-                }
-                torch.save(optimizer_checkpoint, f"{current_model_directory}/optimizer.pt")
-                training_state_checkpoint = {
-                    "global_step": global_step,
-                    "update_step": update_step,
-                    "tokens_seen": tokens_seen,
-                    "tokens_seen_before": tokens_seen_before,
-                    "update_time": 0.0,
-                }
-                with open(f"{current_model_directory}/training_state.json", "w") as f:
-                    json.dump(training_state_checkpoint, f, indent=4)
 
     # ##############################
     # END of training loop
