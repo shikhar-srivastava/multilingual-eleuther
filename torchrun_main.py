@@ -890,7 +890,27 @@ def main(args):
     # global steps and others are defined above
     pad_idx = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else -1
     logger.info(f"Using pad_token_id={pad_idx} for training (-1 means placeholder)")
-    
+
+    # Initial evaluation at step 0
+    if args.monolingual_dataset is not None:
+        if global_rank == 0:
+            logger.info("Performing initial evaluation at step 0")
+        init_eval_loss, init_eval_tokens, _, _ = evaluate_model(
+            model, tokenizer, pad_idx, global_rank, world_size, device, args.batch_size,
+            track_bytes=False, monolingual_dataset=args.monolingual_dataset, args=args
+        )
+        init_eval_metrics = {
+            "eval_loss": init_eval_loss,
+            "eval_perplexity": math.exp(init_eval_loss) if init_eval_loss is not None else None,
+            "eval_tokens": init_eval_tokens,
+        }
+        if global_rank == 0:
+            wandb.log(init_eval_metrics, step=0)
+            try:
+                logger.info(f"Initial eval loss: {init_eval_loss:.6f} | ppl: {math.exp(init_eval_loss):.3f}")
+            except Exception:
+                logger.info(f"Initial eval loss: {init_eval_loss}")
+
     # Epoch-based training variables
     current_epoch = 1
     epoch_step = 0  # Batch step counter (for debugging)
@@ -1072,6 +1092,7 @@ def main(args):
 
                 eval_metrics = {
                     "eval_loss": eval_loss,
+                    "eval_perplexity": math.exp(eval_loss) if eval_loss is not None else None,
                     "eval_tokens": eval_tokens,
                 }
 
@@ -1292,6 +1313,7 @@ def main(args):
 
     final_eval_metrics = {
         "final_eval_loss": final_loss,
+        "final_eval_perplexity": math.exp(final_loss) if final_loss is not None else None,
         "final_eval_tokens": final_tokens,
     }
     
