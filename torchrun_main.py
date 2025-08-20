@@ -306,6 +306,13 @@ def push_to_huggingface_hub(model_dir, repo_name, revision=None, commit_message=
         
         # Push the model
         if revision:
+            # Ensure the target branch exists; create if missing
+            try:
+                api.create_branch(repo_id=repo_name, branch=revision)
+                logger.info(f"Created/verified branch '{revision}' for repo {repo_name}")
+            except Exception as e:
+                logger.info(f"Branch '{revision}' may already exist or could not be created: {e}")
+
             logger.info(f"Pushing model to {repo_name} (revision: {revision})")
             api.upload_folder(
                 folder_path=model_dir,
