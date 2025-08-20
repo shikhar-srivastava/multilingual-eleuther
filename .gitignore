@@ -10,3 +10,5 @@ old_checkpoints/*
 130m_res_pre_*/*
 130m_res_post_*/*
 130m_res_LNS_*/*
+mono_130m_pre_lr1e-3_eng_latn_bpe_unscaled_32768/*
+

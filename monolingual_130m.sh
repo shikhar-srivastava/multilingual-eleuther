@@ -25,10 +25,9 @@ save_dir="$run_name"
 echo "Training 130M with lr=$learning_rates, norm=$norm_type, dataset=$monolingual_dataset, tok=${tokenizer_type}/${vocab_size} on 4 GPUs"
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node 4 --master_port=$MASTER_PORT torchrun_main.py \
-    --workers 1 \
     --model_config configs/llama_130m.json \
     --lr $learning_rates \
-    --batch_size 64 \
+    --batch_size 32 \
     --total_batch_size 512 \
     --num_epochs 10 \
     --warmup_steps_ratio 0.1 \

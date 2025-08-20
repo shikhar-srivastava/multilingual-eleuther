@@ -6,7 +6,7 @@ set -euo pipefail
 # 2) Train using monolingual_130m.sh
 
 DATASETS=(eng_latn) # tha_thai urd_arab amh_ethi vie_latn)
-VOCABS=(32768) # 49152 65536)
+VOCABS=(32768) # 16384, 32768, 49152, 65536, 81920 # 49152 65536)
 TOKENIZERS=(bpe_unscaled) # unigram_unscaled)
 
 MAX_SEQ_LEN=1024
