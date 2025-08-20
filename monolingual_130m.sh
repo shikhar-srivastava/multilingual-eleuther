@@ -33,7 +33,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node 4 --master_port=$MASTER_P
     --warmup_steps_ratio 0.1 \
     --weight_decay 0 \
     --dtype bfloat16 \
-    --eval_every 1000 \
+    --eval_every 50 \
     --optimizer adam \
     --grad_clipping 0.0 \
     --run_name "$run_name" \
