@@ -1,155 +1,192 @@
 <div align="center">
   
-# The Curse of Depth in Large Language Models
-[[`Arxiv`](https://arxiv.org/abs/2502.05795)] 
-[[X(Twitter)](https://x.com/Shiwei_Liu66/status/1889257901346152844)]
-[[Model](https://huggingface.co/pengxiang/LNS_1B)]
-[[Talk](https://www.youtube.com/watch?v=sVN7wgmmNms)]
+# Multilingual Language Model Training Pipeline
 
-We present the Curse of Depth, a phenomenon in Large Language Models (LLMs) where deeper layers contribute less effectively to training due to the widespread use of Pre-Layer Normalization (Pre-LN). Our analysis identifies this issue as a key bottleneck in LLM optimization and proposes LayerNorm Scaling as a solution to mitigate its impact.
+A pipeline for training monolingual language models across different languages, vocabulary sizes, and tokenization approaches.
 
-<div align="center">
-  <img src="scaling.png" alt="Image 2" style="width: 900px; margin: 0 auto;">
-</div>
 </div>
 
-## Abstract
+## 🚀 Quick Start
 
-In this paper, we introduce the Curse of Depth, a concept that highlights, explains, and addresses the recent observation in modern Large Language Models (LLMs) where nearly half of the layers are less effective than expected. We first confirm the wide existence of this phenomenon across the most popular families of LLMs such as Llama, Mistral, DeepSeek, and Qwen. Our analysis, theoretically and empirically, identifies that the underlying reason for the ineffectiveness of deep layers in LLMs is the widespread usage of Pre-Layer Normalization (Pre-LN). While Pre-LN stabilizes the training of Transformer LLMs, its output variance exponentially grows with the model depth, which undesirably causes the derivative of the deep Transformer blocks to be an identity matrix, and therefore barely contributes to the training. To resolve this training pitfall, we propose LayerNorm Scaling, which scales the variance of output of the layer normalization inversely by the square root of its depth. This simple modification mitigates the output variance explosion of deeper Transformer layers, improving their contribution. Our experimental results, spanning model sizes from 130M to 1B, demonstrate that LayerNorm Scaling significantly enhances LLM pre-training performance compared to Pre-LN. Moreover, this improvement seamlessly carries over to supervised fine-tuning. All these gains can be attributed to the fact that LayerNorm Scaling enables deeper layers to contribute more effectively during training.
+### Prerequisites
 
-## Caveat 
+Before training monolingual models, you need to download the required data:
 
-Combining LNS with Scaled Initialization (which scales the initialization of W0 and W2 by the overall depth $1/\sqrt{2L}$) undermines the effectiveness of LNS, performing worse than using LNS alone. This highlights the importance of eliminating conflicting initialization strategies before adopting LNS.
+1. **Monolingual Training Data**: Download the preprocessed monolingual datasets
+   - Expected location: `/scratch/ssrivas9/catherinearnett/monolingual_training_data`
+   - Contains text files for: `eng_latn`, `tha_thai`, `urd_arab`, `amh_ethi`, `vie_latn`
 
-<div align="center">
-  <img src="scaled_init.png" alt="Image 2" style="width: 600px; margin: 0 auto;">
-</div>
-</div>
+2. **Monolingual Tokenizers**: Download the pretrained tokenizers
+   - Expected location: `/scratch/ssrivas9/catherinearnett/monolingual-tokenizers`
+   - Contains BPE and Unigram tokenizers with various vocabulary sizes
 
-## Hugging Face
-We have uploaded the trained weights for the 1B model using LayerNorm Scaling (LNS). 
-You can download them from [https://huggingface.co/pengxiang/LNS_1B].
+### Environment Setup
 
-## Quick Start
-
-### Install experiment dependencies
-
-You can configure the environment using the following command lines:
+Set up your environment using conda:
 
 ```bash
-conda create -n LNS python=3.9 -y
-conda activate LNS
+conda create -n multi python=3.9 -y
+conda activate multi
 pip install -r exp_requirements.txt
 ```
 
-### Training Examples
-We provide scripts to train models of different sizes using Pre-LN, Post-LN, Mix-LN, and LayerNorm Scaling (LNS).
+## 📊 Data Preparation
 
-Train a 130M Model:
+### Step 1: Create Byte Premium Splits
+
+Create balanced training and evaluation splits based on byte premium (BP) calculations:
+
 ```bash
-bash run_130m.sh pre      3   # Pre-LN
-bash run_130m.sh post     3   # Post-LN
-bash run_130m.sh post_pre 3   # Mix-LN
-bash run_130m.sh LNS      3   # LayerNorm Scaling (LNS)
+# Train Split: Take 1 GB * Byte Premium of each monolingual dataset 
+# Eval Split: Take last 8,000 lines of each monolingual dataset
 
-(Note: 3 represents the number of Post-LN layers in Mix-LN.)
+python /scratch/ssrivas9/multilingual-eleuther/scripts/create_bp_splits.py \
+  --input_root /scratch/ssrivas9/catherinearnett/monolingual_training_data \
+  --output_root /scratch/ssrivas9/catherinearnett/monolingual_training_data_bp
 ```
 
+This creates balanced datasets with the following byte premiums:
+- **English (eng_latn)**: 1.0× (1GB)
+- **Thai (tha_thai)**: 2.74× (2.94GB)
+- **Urdu (urd_arab)**: 1.71× (1.84GB)  
+- **Amharic (amh_ethi)**: 1.72× (1.85GB)
+- **Vietnamese (vie_latn)**: 1.35× (1.45GB)
 
-Train a 250M Mode:
+## 🏋️ Model Training
+
+### Monolingual Training Pipeline
+
+The pipeline supports training 130M parameter models on individual languages with various normalization techniques. Each language has its dedicated training script:
+
+#### English Training
 ```bash
-bash run_250m.sh pre      6   # Pre-LN
-bash run_250m.sh post     6   # Post-LN
-bash run_250m.sh post_pre 6   # Mix-LN
-bash run_250m.sh LNS      6   # LayerNorm Scaling (LNS)
-
-(Note: 6 represents the number of Post-LN layers in Mix-LN.)
+bash launch_monolingual_eng.sh
 ```
 
-Train a 350M Mode:
+#### Thai Training
 ```bash
-bash run_350m.sh pre      6   # Pre-LN
-bash run_350m.sh post     6   # Post-LN
-bash run_350m.sh post_pre 6   # Mix-LN
-bash run_350m.sh LNS      6   # LayerNorm Scaling (LNS)
+bash launch_monolingual_tha.sh
 ```
 
-Train a 1B Mode:
+#### Urdu Training
 ```bash
-bash run_1b.sh pre        6   # Pre-LN
-bash run_1b.sh post       6   # Post-LN
-bash run_1b.sh post_pre   6   # Mix-LN
-bash run_1b.sh LNS        6   # LayerNorm Scaling (LNS)
+bash launch_monolingual_urd.sh
 ```
 
-## Normalization Variants
-
-This repository implements 15 different normalization variants for experimental research. All variants are implemented in [`peft_pretraining/modeling_llama.py`](peft_pretraining/modeling_llama.py).
-
-| Variant | Description | Constructor Lines | Forward Lines |
-|---------|-------------|-------------------|---------------|
-| `pre` | Standard Pre-LayerNorm (Pre-LN) - applies normalization before attention/MLP | [L291](peft_pretraining/modeling_llama.py#L291) | [L404](peft_pretraining/modeling_llama.py#L404) |
-| `post` | Standard Post-LayerNorm (Post-LN) - applies normalization after attention/MLP | [L294](peft_pretraining/modeling_llama.py#L294) | [L473](peft_pretraining/modeling_llama.py#L473) |
-| `deeppost` | Post-LN with DeepNet-style residual scaling (2√2 factor) | [L294](peft_pretraining/modeling_llama.py#L294) | [L473](peft_pretraining/modeling_llama.py#L473) |
-| `LNS` / `lns` | **LayerNorm Scaling** - Pre-LN with depth-dependent scaling (1/√layer_index) | [L291](peft_pretraining/modeling_llama.py#L291) | [L426](peft_pretraining/modeling_llama.py#L426) |
-| `scale_pre` | Pre-LN with scaled weight initialization (1/√2L) | [L291](peft_pretraining/modeling_llama.py#L291) | [L404](peft_pretraining/modeling_llama.py#L404) |
-| `sandwich` | Sandwich normalization - both pre and post norms around attention/MLP | [L297](peft_pretraining/modeling_llama.py#L297) | [L504](peft_pretraining/modeling_llama.py#L504) |
-| `post_pre` | **Mix-LN** - First POST_NUM layers use post-norm, remaining use pre-norm | [L322](peft_pretraining/modeling_llama.py#L322) | [L603](peft_pretraining/modeling_llama.py#L603) |
-| `scale_post_pre` | Mix-LN with scaled initialization for pre-norm layers | [L322](peft_pretraining/modeling_llama.py#L322) | [L603](peft_pretraining/modeling_llama.py#L603) |
-| `pre_post` | First 7 layers use pre-norm, remaining use post-norm (hardcoded) | [L302](peft_pretraining/modeling_llama.py#L302) | [L525](peft_pretraining/modeling_llama.py#L525) |
-| `pre_sandwich` | First 7 layers use pre-norm, remaining use sandwich norm (hardcoded) | [L311](peft_pretraining/modeling_llama.py#L311) | [L563](peft_pretraining/modeling_llama.py#L563) |
-| `scale_res_pre_norm` | Pre-LN with learnable residual scaling factors (separate for attention/MLP) | [L331](peft_pretraining/modeling_llama.py#L331) | [L455](peft_pretraining/modeling_llama.py#L455) |
-| `pre_post_pre_post` | Alternating pre/post every 4 layers (3 pre, 1 post pattern) | [L336](peft_pretraining/modeling_llama.py#L336) | ⚠️ *No forward implementation* |
-| `post_pre_post_pre` | Alternating post/pre every 4 layers (3 post, 1 pre pattern) | [L345](peft_pretraining/modeling_llama.py#L345) | [L769](peft_pretraining/modeling_llama.py#L769) |
-| `mono` | Pre-norm with Gumbel-Softmax routing between pre/post every 4th layer | [L354](peft_pretraining/modeling_llama.py#L354) | [L640](peft_pretraining/modeling_llama.py#L640) |
-| `mono_reverse` | Post-norm with Gumbel-Softmax routing between pre/post every 4th layer | [L366](peft_pretraining/modeling_llama.py#L366) | [L704](peft_pretraining/modeling_llama.py#L704) |
-
-### Key Notes:
-- **POST_NUM Parameter**: Only `post_pre` and `scale_post_pre` use the `POST_NUM` environment variable to control the transition point between normalization strategies
-- **Main Contribution**: `LNS`/`lns` is the primary contribution of this paper - LayerNorm Scaling that mitigates the curse of depth
-- **Mix-LN**: Refers specifically to `post_pre` - the hybrid approach combining post-norm early layers with pre-norm later layers
-- **Experimental Variants**: Many variants (`mono`, `mono_reverse`, etc.) are for research exploration of different normalization strategies
-
-### Usage:
+#### Amharic Training
 ```bash
-# Standard variants
-bash run_1b.sh pre 1        # Pre-LN (POST_NUM ignored)
-bash run_1b.sh post 1       # Post-LN (POST_NUM ignored) 
-bash run_1b.sh LNS 1        # LayerNorm Scaling (POST_NUM ignored)
-
-# Hybrid variants (POST_NUM matters)
-bash run_1b.sh post_pre 3   # First 3 layers post-norm, rest pre-norm
-bash run_1b.sh post_pre 12  # First 12 layers post-norm, rest pre-norm
+bash launch_monolingual_amh.sh
 ```
 
-## Performance Drop
-Calculate the performance drop after removing different layers. We use [lm_eval](https://github.com/EleutherAI/lm-evaluation-harness) to obtain evaluation results. Please refer to its installation instructions to configure `lm_eval``.
+#### Vietnamese Training
 ```bash
-git clone https://github.com/EleutherAI/lm-evaluation-harness
-cd lm-evaluation-harness
-pip install -e .
+bash launch_monolingual_vie.sh
 ```
 
-Then, you can run the following command to remove different layers and save the weights to a new model. The performance drop will be calculated based on the new model:
+### Training Configuration
+
+Each monolingual training script:
+1. **Tokenizes** the data using multiple vocabulary sizes (16K, 32K, 49K, 65K, 81K)
+2. **Trains** 130M parameter models 
+3. **Supports** both BPE and Unigram tokenization (configurable in scripts)
+
+Example tokenization command (executed automatically):
 ```bash
-# LLaMA2-7B, Remove Layer 1
-python layer_remove.py \
-    --model_path meta-llama/Llama-2-7b-hf \
-    --layer_index 1 \
-    --save_path ./llama_7b_removed_1
+python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+  --dataset "eng_latn" --tokenizer_type "bpe_unscaled" --tokenizer_vocabulary "32768" \
+  --split train --max_seq_len 1024 --max_segments -1 --prepend_cls True --include_sep True --shuffle True
 ```
 
-### 📚Citation
-
-```bibtex
-@article{sun2025curse,
-  title={The Curse of Depth in Large Language Models},
-  author={Sun, Wenfang and Song, Xinyuan and Li, Pengxiang and Yin, Lu and Zheng, Yefeng and Liu, Shiwei},
-  journal={arXiv preprint arXiv:2502.05795},
-  year={2025}
-}
+Example training command (executed automatically):
+```bash
+bash /scratch/ssrivas9/multilingual-eleuther/monolingual_130m.sh pre "eng_latn" "32768" "bpe_unscaled" 6 29510
 ```
 
+### Direct Model Training
 
-### Acknowledgement
-This repository is built upon the [Mix-LN](https://github.com/pixeli99/MixLN/tree/main) repositories. Thanks for their great work!
+You can also train individual models directly:
+
+```bash
+# Train English model with 32K BPE vocabulary
+bash monolingual_130m.sh pre eng_latn 32768 bpe_unscaled 6 29510
+
+# Train Thai model with 49K BPE vocabulary  
+bash monolingual_130m.sh pre tha_thai 49152 bpe_unscaled 6 29510
+
+# Train with Unigram tokenization
+bash monolingual_130m.sh pre eng_latn 32768 unigram_unscaled 6 29510
+```
+
+### Parameters:
+- `norm_type`: Model configuration (use `pre` as default)
+- `dataset`: Language dataset (`eng_latn`, `tha_thai`, `urd_arab`, `amh_ethi`, `vie_latn`)
+- `vocab_size`: Tokenizer vocabulary size (`16384`, `32768`, `49152`, `65536`, `81920`)
+- `tokenizer_type`: Tokenization algorithm (`bpe_unscaled`, `unigram_unscaled`)
+- `post_num`: Configuration parameter (use `6` as default)
+- `master_port`: Port for distributed training
+
+## 🛠️ Model Architecture
+
+### 130M Model Configuration
+- **Layers**: 12 transformer blocks
+- **Hidden Size**: 768
+- **Attention Heads**: 12
+- **Intermediate Size**: 2048
+- **Max Sequence Length**: 1024
+- **Position Encoding**: RoPE (Rotary Position Embedding)
+- **Activation**: SiLU/Swish
+
+### Training Hyperparameters
+- **Learning Rate**: 1e-3
+- **Batch Size**: 32 (per device)
+- **Total Batch Size**: 512 (with gradient accumulation)
+- **Epochs**: 10
+- **Warmup Ratio**: 0.1
+- **Optimizer**: Adam
+- **Precision**: bfloat16
+
+## 📁 Project Structure
+
+```
+multilingual-eleuther/
+├── configs/                    # Model configurations
+│   ├── llama_130m.json        # 130M model config
+│   ├── llama_1b.json          # 1B model config
+│   └── monolingual_bp_index.json  # Dataset index
+├── scripts/                   # Data processing scripts
+│   ├── create_bp_splits.py    # Create byte premium splits
+│   └── tokenize_and_pack.py   # Tokenization pipeline
+├── peft_pretraining/         # Core training modules
+│   ├── modeling_llama.py     # Model implementations
+│   ├── dataloader.py         # Data loading utilities
+│   └── training_utils.py     # Training utilities
+├── launch_monolingual_*.sh   # Language-specific training scripts
+├── monolingual_130m.sh       # Core training script
+└── torchrun_main.py         # Main training entry point
+```
+
+## 🎯 Supported Languages
+
+| Language | Script | Dataset Code | Byte Premium |
+|----------|--------|--------------|--------------|
+| English | Latin | `eng_latn` | 1.0× |
+| Thai | Thai | `tha_thai` | 2.74× |
+| Urdu | Arabic | `urd_arab` | 1.71× |
+| Amharic | Ethiopic | `amh_ethi` | 1.72× |
+| Vietnamese | Latin | `vie_latn` | 1.35× |
+
+
+### Hyperparameter Tuning
+
+Modify training parameters in `monolingual_130m.sh`:
+- Learning rates: `1e-3`, `1e-4`, `5e-4`
+- Batch sizes: `16`, `32`, `64`
+- Sequence lengths: `512`, `1024`, `2048`
+
+## 🙏 Acknowledgments
+
+This code is built on top of:
+- [@LayerNorm-Scaling](https://github.com/lmsdss/LayerNorm-Scaling): Core model training infrastructure
+- [@word-acquisition-language-models](https://github.com/tylerachang/word-acquisition-language-models/tree/1182df1d388be189214da0184ee04a416dec18cc): Tokenization pipeline and data processing utilities
+
+We thank the authors of these repositories for their work.
