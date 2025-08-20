@@ -377,7 +377,7 @@ def parse_args(args):
     parser.add_argument("--single_gpu", default=False, action="store_true")
     
     # Activation tracking parameters
-    parser.add_argument("--track_activations", default=True, action="store_true", 
+    parser.add_argument("--track_activations", default=False, action="store_true", 
                         help="Enable activation distribution tracking")
     parser.add_argument("--activation_track_every", type=int, default=100,
                         help="Track activations every N training steps")
