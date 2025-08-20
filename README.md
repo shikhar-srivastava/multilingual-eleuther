@@ -1,8 +1,8 @@
 <div align="center">
   
-# Multilingual Language Model Training Pipeline
+# Monolingual Language Model Training Pipeline
 
-A pipeline for training monolingual language models across different languages, vocabulary sizes, and tokenization approaches.
+A pipeline for training monolingual LLaMA models across different languages, vocabulary sizes, and tokenization approaches. 
 
 </div>
 
