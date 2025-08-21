@@ -295,15 +295,22 @@ class LlamaAttention(nn.Module):
 
         past_key_value = (key_states, value_states) if use_cache else None
 
+        attn_mask = None
         if attention_mask is not None:
             if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
                 raise ValueError(
                     f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
                 )
+            # Use the combined padding + causal mask computed by the model
+            attn_mask = attention_mask
 
-        # WARNING: padding mask is ignored, causal is always applied
         attn_output = torch.nn.functional.scaled_dot_product_attention(
-            query_states, key_states, value_states, dropout_p=0.0, is_causal=True,
+            query_states,
+            key_states,
+            value_states,
+            attn_mask=attn_mask,
+            dropout_p=0.0,
+            is_causal=False,
         )
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):

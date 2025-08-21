@@ -671,20 +671,50 @@ def main(args):
     pre_file_size_bytes = os.path.getsize(tokenized_train_path) if os.path.exists(tokenized_train_path) else 0
 
     # Calculate training parameters
-    steps_per_epoch = math.ceil(dataset_size / float(args.total_batch_size))
-    if steps_per_epoch == 0:
-        steps_per_epoch = 1  # Ensure at least 1 step per epoch
-
+    # Each epoch processes dataset_size examples total across all ranks
+    # Each update step processes total_batch_size examples globally
+    # So update steps per epoch = ceil(dataset_size / total_batch_size)
+    # But we need to be precise about how the dataloader handles remainders
+    
+    # The dataloader shards by rank, so each rank processes ~dataset_size/world_size lines
+    # Each rank batches its lines into micro-batches of size batch_size
+    # Each rank accumulates gradient_accumulation micro-batches before updating
+    
+    lines_per_rank_per_epoch = dataset_size // world_size
+    remainder_lines = dataset_size % world_size
+    
+    # Calculate micro-batches per rank, accounting for remainder distribution
+    micro_batches_per_rank_base = math.ceil(lines_per_rank_per_epoch / args.batch_size)
+    # Some ranks get one extra line if there's a remainder
+    if remainder_lines > 0:
+        micro_batches_per_rank_extra = math.ceil((lines_per_rank_per_epoch + 1) / args.batch_size)
+        # The rank with the most micro-batches determines the epoch length
+        max_micro_batches_per_rank = micro_batches_per_rank_extra
+    else:
+        max_micro_batches_per_rank = micro_batches_per_rank_base
+    
+    # Update steps per epoch = micro-batches per rank / gradient_accumulation
+    # All ranks synchronize, so we use the maximum micro-batches across ranks
+    steps_per_epoch = math.ceil(max_micro_batches_per_rank / args.gradient_accumulation)
+    
     total_training_steps = steps_per_epoch * args.num_epochs
+    if total_training_steps <= 0:
+        total_training_steps = 1
+    
+    # For per-epoch breakdown
+    steps_in_epoch = {}
+    for e in range(1, args.num_epochs + 1):
+        steps_in_epoch[e] = steps_per_epoch
     warmup_steps = int(total_training_steps * args.warmup_steps_ratio)
 
     logger.info(f"Epoch-based training configuration:")
     logger.info(f"  Training mode: {training_mode}")
     logger.info(f"  Dataset size: {dataset_size:,} training sequences")
     logger.info(f"  Pre-tokenized file size: {pre_file_size_bytes / (1024*1024):.1f} MB ({pre_file_size_bytes / (1024*1024*1024):.2f} GB)")
-    logger.info(f"  Steps per epoch (planned): {steps_per_epoch:,}")
+    logger.info(f"  Steps per epoch (planned, epoch 1): {steps_per_epoch:,}")
     logger.info(f"  Total epochs: {args.num_epochs}")
-    logger.info(f"  Total training steps (planned): {total_training_steps:,}")
+    logger.info(f"  Total training steps (planned exact): {total_training_steps:,}")
+    logger.info(f"  Planned updates per epoch: {steps_in_epoch}")
     logger.info(f"  Warmup steps: {warmup_steps:,} ({args.warmup_steps_ratio*100:.1f}%)")
     logger.info(f"  Avg sequences per step: {args.total_batch_size}")
 
@@ -701,10 +731,18 @@ def main(args):
     # Initial dataset creation for epoch 1
     # (Removed unused variable 'data')
 
-    # Handle pad token configuration per user rule
+    # Handle pad token configuration per user rule; set a safe default if missing
     if args.pad_token is None:
         if tokenizer.pad_token is None:
-            logger.warning("Tokenizer has no pad_token and --pad_token not set; batches will use placeholder -1.")
+            # Prefer using eos as pad if available to avoid -1 placeholder
+            if tokenizer.eos_token is not None:
+                tokenizer.pad_token = tokenizer.eos_token
+                logger.info("Tokenizer had no pad_token; using EOS as pad_token")
+            elif tokenizer.unk_token is not None:
+                tokenizer.pad_token = tokenizer.unk_token
+                logger.info("Tokenizer had no pad_token; using UNK as pad_token")
+            else:
+                logger.warning("Tokenizer has no pad_token and no EOS/UNK; batches will use placeholder -1.")
     else:
         # modify PAD only if explicitly provided
         if args.pad_token in ['eos', 'unk', 'bos']:
@@ -928,10 +966,11 @@ def main(args):
     # EPOCH-BASED TRAINING LOOP
     # ##############################
 
-    # Calculate adaptive checkpoint intervals for each epoch
+    # Calculate adaptive checkpoint intervals for each epoch using per-epoch planned updates
     epoch_checkpoint_plans = {}
     for epoch in range(1, args.num_epochs + 1):
-        epoch_checkpoint_plans[epoch] = calculate_checkpoint_intervals(epoch, steps_per_epoch)
+        planned_updates = max(1, steps_in_epoch.get(epoch, 0))
+        epoch_checkpoint_plans[epoch] = calculate_checkpoint_intervals(epoch, planned_updates)
         logger.info(f"Epoch {epoch} checkpoint plan: {epoch_checkpoint_plans[epoch]}")
 
     for epoch in range(current_epoch, args.num_epochs + 1):
@@ -1021,7 +1060,7 @@ def main(args):
                 checkpoint_name = f"epoch_{current_epoch}_step_{epoch_update_step}"
                 current_model_directory = f"{args.save_dir}/model_{checkpoint_name}"
                 logger.info(
-                    f"Saving checkpoint to {current_model_directory} (Epoch {current_epoch}, Update Step {epoch_update_step}/{steps_per_epoch})"
+                    f"Saving checkpoint to {current_model_directory} (Epoch {current_epoch}, Update Step {epoch_update_step}/{steps_in_epoch.get(current_epoch, 0)})"
                 )
 
                 # Save tokenizer first
@@ -1167,11 +1206,13 @@ def main(args):
                 wandb.log(metrics_to_log, step=global_step)
             update_time = time.time()
 
-            # Continue until the dataloader is exhausted to ensure all lines are consumed
-            
-            # Break out of epoch loop if we've reached max training steps
+            # Stop training when planned total updates are reached
             if update_step >= total_training_steps:
                 break
+
+        # Early exit outer loop if we have reached the planned total updates
+        if update_step >= total_training_steps:
+            break
 
 
     # ##############################
