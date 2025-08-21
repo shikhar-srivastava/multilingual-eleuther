@@ -1053,8 +1053,7 @@ def main(args):
 
             # Adaptive checkpointing based on epoch and step
             if (
-                local_step > args.gradient_accumulation
-                and epoch_update_step in checkpoint_steps
+                epoch_update_step in checkpoint_steps
                 and global_rank == 0
             ):
                 checkpoint_name = f"epoch_{current_epoch}_step_{epoch_update_step}"
