@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+goldfish=${goldfish:-False}
+TRAIN_SCRIPT="/scratch/ssrivas9/multilingual-eleuther/monolingual_130m.sh"
+if [[ "$goldfish" == "True" ]]; then
+  TRAIN_SCRIPT="/scratch/ssrivas9/multilingual-eleuther/monolingual_130m_gold.sh"
+fi
 # Iterate over all monolingual datasets, vocabulary sizes, and tokenizer types.
 # 1) Tokenize train and eval splits using scripts/tokenize_and_pack.py
 # 2) Train using monolingual_130m.sh
@@ -31,7 +35,7 @@ for dataset in "${DATASETS[@]}"; do
       tokenize_fn "$dataset" "$tok" "$vocab"
 
       echo "[Train] dataset=$dataset, tok=$tok, vocab=$vocab"
-      bash /scratch/ssrivas9/multilingual-eleuther/monolingual_130m.sh pre "$dataset" "$vocab" "$tok" 6 29510
+      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 29510
     done
   done
 done
