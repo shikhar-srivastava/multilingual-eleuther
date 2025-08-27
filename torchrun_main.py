@@ -346,12 +346,15 @@ def parse_args(args):
     parser.add_argument("--max_length", type=int, default=1024)
     parser.add_argument("--optimizer", default="Adam")
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--eps", type=float, default=1e-8)
     parser.add_argument("--scheduler", type=str, default="cosine", choices=["linear", "cosine", "cosine_restarts"])
     parser.add_argument("--min_lr_ratio", type=float, default=0.1)
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--warmup_steps_ratio", type=float, default=0.05,
                         help="Ratio of warmup steps to total training steps (default: 0.05 = 5%%)")
+    parser.add_argument("--attention_dropout", type=float, default=0.0,
+                        help="Dropout probability applied inside attention (scaled dot-product)")
     parser.add_argument("--eval_every", type=int, default=2_000)
     parser.add_argument("--num_epochs", type=int, default=10,
                         help="Number of epochs to train for (default: 10)")
@@ -762,6 +765,12 @@ def main(args):
 
     # Load model config
     model_config = AutoConfig.from_pretrained(args.model_config)
+    if hasattr(args, 'attention_dropout'):
+        try:
+            model_config.attention_dropout = float(args.attention_dropout)
+            logger.info(f"Using attention_dropout={model_config.attention_dropout}")
+        except Exception:
+            logger.warning("Failed to set model_config.attention_dropout from args")
     
     # Override positional embedding type if specified
     if hasattr(args, 'position_embedding_type') and args.position_embedding_type != "rope":
@@ -907,7 +916,7 @@ def main(args):
         logger.info(f"Weight tracker initialized: {weight_tracker.get_summary()}")
     
     if args.optimizer.lower() == "adam":
-        optimizer = torch.optim.Adam(trainable_params, lr=args.lr, weight_decay=args.weight_decay)
+        optimizer = torch.optim.Adam(trainable_params, lr=args.lr, weight_decay=args.weight_decay, eps=args.eps)
     else:
         raise ValueError(f"Optimizer {args.optimizer} not supported")
 

@@ -222,6 +222,7 @@ class LlamaAttention(nn.Module):
         self.num_heads = config.num_attention_heads
         self.head_dim = self.hidden_size // self.num_heads
         self.max_position_embeddings = getattr(config, 'max_position_embeddings', getattr(config, 'max_sequence_length', 2048))
+        self.attention_dropout = getattr(config, 'attention_dropout', 0.0)
         
         # Get positional embedding type from config or environment variable
         self.position_embedding_type = getattr(config, 'position_embedding_type', 'rope')
@@ -304,12 +305,13 @@ class LlamaAttention(nn.Module):
             # Use the combined padding + causal mask computed by the model
             attn_mask = attention_mask
 
+        attn_dropout_p = self.attention_dropout if self.training else 0.0
         attn_output = torch.nn.functional.scaled_dot_product_attention(
             query_states,
             key_states,
             value_states,
             attn_mask=attn_mask,
-            dropout_p=0.0,
+            dropout_p=attn_dropout_p,
             is_causal=False,
         )
 
@@ -342,6 +344,7 @@ class LlamaDecoderLayer(nn.Module):
         print(f'Initializing LlamaDecoderLayer {self.layer_index + 1}/{self.layer_nums} with norm type: {norm_type}')
         scale_attn_weights = False
         scale_mlp_output = False
+        dropout_p = getattr(config, 'dropout', 0.0)
 
         if norm_type == 'scale_post_pre':
             if self.layer_index < self.max_post_norm_layer:
@@ -359,6 +362,7 @@ class LlamaDecoderLayer(nn.Module):
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
+            dropout=dropout_p,
             scale_mlp_output=scale_mlp_output,
         )
         
