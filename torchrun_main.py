@@ -327,7 +327,6 @@ def push_to_huggingface_hub(model_dir, repo_name, revision=None, commit_message=
                 repo_id=repo_name,
                 commit_message=commit_message or "Upload model checkpoint"
             )
-        
         logger.info(f"Successfully pushed model to HuggingFace Hub: {repo_name}")
         return True
         
@@ -693,9 +692,9 @@ def main(args):
     else:
         max_micro_batches_per_rank = micro_batches_per_rank_base
     
-    # Update steps per epoch = micro-batches per rank / gradient_accumulation
+    # Update steps per epoch = floor(micro-batches per rank / gradient_accumulation)
     # All ranks synchronize, so we use the maximum micro-batches across ranks
-    steps_per_epoch = math.ceil(max_micro_batches_per_rank / args.gradient_accumulation)
+    steps_per_epoch = max(1, max_micro_batches_per_rank // args.gradient_accumulation)
     
     total_training_steps = steps_per_epoch * args.num_epochs
     if total_training_steps <= 0:
@@ -956,7 +955,8 @@ def main(args):
     # Epoch-based training variables
     current_epoch = 1
     epoch_step = 0  # Batch step counter (for debugging)
-    epoch_update_step = 0  # Update step counter (for epoch completion and checkpointing)
+    epoch_update_step = 0  # Reset update step counter (for epoch completion and checkpointing)
+    micro_step = 0  # Reset micro accumulation at epoch boundary
     
     training_start_time = time.time()  # Track training start time for byte consumption analysis
     update_time = time.time()
@@ -977,8 +977,8 @@ def main(args):
         logger.info(f"Starting epoch {epoch}/{args.num_epochs}")
         current_epoch = epoch
         epoch_step = 0  # Reset batch step counter
-        epoch_update_step = 0  # Reset update step counter for this epoch
-        
+        epoch_update_step = 0  # Reset update step counter (for epoch completion and checkpointing)
+        micro_step = 0  # Reset micro accumulation at epoch boundary
         # Reshuffle dataset for this epoch (except epoch 1 which was already created)
         if epoch > 1:
             logger.info(f"Reshuffling dataset for epoch {epoch}")
