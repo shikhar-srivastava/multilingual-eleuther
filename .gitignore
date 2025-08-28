@@ -11,3 +11,5 @@ old_checkpoints/*
 130m_res_post_*/*
 130m_res_LNS_*/*
 mono_130m_pre*/*
+debug2_130m_pre_*/*
+debug_130m_pre_*/*

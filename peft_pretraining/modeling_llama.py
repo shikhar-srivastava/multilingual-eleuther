@@ -344,7 +344,6 @@ class LlamaDecoderLayer(nn.Module):
         print(f'Initializing LlamaDecoderLayer {self.layer_index + 1}/{self.layer_nums} with norm type: {norm_type}')
         scale_attn_weights = False
         scale_mlp_output = False
-        dropout_p = getattr(config, 'dropout', 0.0)
 
         if norm_type == 'scale_post_pre':
             if self.layer_index < self.max_post_norm_layer:
@@ -362,7 +361,6 @@ class LlamaDecoderLayer(nn.Module):
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
-            dropout=dropout_p,
             scale_mlp_output=scale_mlp_output,
         )
         
