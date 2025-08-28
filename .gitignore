@@ -13,3 +13,5 @@ old_checkpoints/*
 mono_130m_pre*/*
 debug2_130m_pre_*/*
 debug_130m_pre_*/*
+debug_mono*/*
+logs/*

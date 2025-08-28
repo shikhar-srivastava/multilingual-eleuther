@@ -301,11 +301,19 @@ class IntLineIterableDataset(IterableDataset):
 
     def __iter__(self):
         import itertools
+        worker_info = get_worker_info()
+        worker_id = worker_info.id if worker_info is not None else 0
+        num_workers = worker_info.num_workers if worker_info is not None else 1
         with open(self.file_path, 'r', encoding='utf-8') as f:
             # Shard lines by rank to avoid duplication across DDP ranks
             # Each rank reads lines i where i % world_size == rank
+            # Additionally shard across DataLoader workers to prevent duplication when num_workers > 0
             for i, line in enumerate(f):
                 if (i % self.world_size) != self.rank:
+                    continue
+                # Index within this rank's stream
+                per_rank_index = i // self.world_size
+                if (per_rank_index % num_workers) != worker_id:
                     continue
                 s = line.strip()
                 if not s:
