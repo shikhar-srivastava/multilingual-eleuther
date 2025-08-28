@@ -12,9 +12,9 @@ echo "[Config] goldfish=$goldfish, using training script: $TRAIN_SCRIPT"
 # 1) Tokenize train and eval splits using scripts/tokenize_and_pack.py
 # 2) Train using monolingual_130m.sh
 
-DATASETS=(tha_thai) # tha_thai urd_arab amh_ethi vie_latn)
+DATASETS=(vie_latn) # tha_thai urd_arab amh_ethi vie_latn)
 VOCABS=(8192 16384 32768 49152 65536 81920 98304 114688 262144)
-TOKENIZERS=(bpe_unscaled) # unigram_unscaled)
+TOKENIZERS=(unigram_unscaled) # unigram_unscaled)
 
 MAX_SEQ_LEN=1024
 GA=2
@@ -38,7 +38,8 @@ for dataset in "${DATASETS[@]}"; do
       tokenize_fn "$dataset" "$tok" "$vocab"
 
       echo "[Train] dataset=$dataset, tok=$tok, vocab=$vocab"
-      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 29510
+      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 29511
     done
   done
 done
+

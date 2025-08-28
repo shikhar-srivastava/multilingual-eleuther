@@ -38,7 +38,7 @@ for dataset in "${DATASETS[@]}"; do
       tokenize_fn "$dataset" "$tok" "$vocab"
 
       echo "[Train] dataset=$dataset, tok=$tok, vocab=$vocab"
-      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 29510
+      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 29511
     done
   done
 done
