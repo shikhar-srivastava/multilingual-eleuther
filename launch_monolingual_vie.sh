@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-goldfish=${goldfish:-False}
+goldfish=${goldfish:-True}
 TRAIN_SCRIPT="/scratch/ssrivas9/multilingual-eleuther/monolingual_130m.sh"
 if [[ "$goldfish" == "True" ]]; then
   TRAIN_SCRIPT="/scratch/ssrivas9/multilingual-eleuther/monolingual_130m_gold.sh"
@@ -13,7 +13,7 @@ echo "[Config] goldfish=$goldfish, using training script: $TRAIN_SCRIPT"
 # 2) Train using monolingual_130m.sh
 
 DATASETS=(vie_latn) # tha_thai urd_arab amh_ethi vie_latn)
-VOCABS=(16384 32768 49152 65536 81920)  #(8192 98304 114688 262144)
+VOCABS=(8192 16384 32768 49152 65536 81920 98304 114688 262144)
 TOKENIZERS=(bpe_unscaled) # unigram_unscaled)
 
 MAX_SEQ_LEN=1024

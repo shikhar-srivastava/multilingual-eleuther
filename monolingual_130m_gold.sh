@@ -19,7 +19,7 @@ export OMP_NUM_THREADS=8
 export NCCL_TIMEOUT=1800
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=300
 
-run_name="debug_mono_130m_${norm_type}_lr${learning_rates}_${monolingual_dataset}_${tokenizer_type}_${vocab_size}_gold"
+run_name="mono_gold_130m_${norm_type}_lr${learning_rates}_${monolingual_dataset}_${tokenizer_type}_${vocab_size}"
 save_dir="$run_name"
 
 echo "Training 130M with lr=$learning_rates, norm=$norm_type, dataset=$monolingual_dataset, tok=${tokenizer_type}/${vocab_size} on 4 GPUs"
