@@ -249,7 +249,7 @@ def calculate_checkpoint_intervals(epoch, steps_per_epoch):
         steps_per_epoch (int): Number of steps per epoch
     
     Returns:
-        list: Steps at which to checkpoint within the epoch
+        list: Epoch-relative steps (1-indexed) at which to checkpoint within the epoch
     """
     if epoch == 1:
         checkpoints_per_epoch = 8
@@ -271,8 +271,8 @@ def calculate_checkpoint_intervals(epoch, steps_per_epoch):
         step = int((i + 1) * interval)
         checkpoint_steps.append(step)
     
-    # Ensure we don't exceed steps_per_epoch
-    checkpoint_steps = [min(step, steps_per_epoch) for step in checkpoint_steps]
+    # Ensure we don't exceed steps_per_epoch and remove duplicates
+    checkpoint_steps = sorted(set([min(step, steps_per_epoch) for step in checkpoint_steps]))
     
     return checkpoint_steps
 
@@ -980,7 +980,7 @@ def main(args):
     for epoch in range(1, args.num_epochs + 1):
         planned_updates = max(1, steps_in_epoch.get(epoch, 0))
         epoch_checkpoint_plans[epoch] = calculate_checkpoint_intervals(epoch, planned_updates)
-        logger.info(f"Epoch {epoch} checkpoint plan: {epoch_checkpoint_plans[epoch]}")
+        logger.info(f"Epoch {epoch} checkpoint plan (epoch-relative steps): {epoch_checkpoint_plans[epoch]} out of {planned_updates} total steps")
 
     for epoch in range(current_epoch, args.num_epochs + 1):
         logger.info(f"Starting epoch {epoch}/{args.num_epochs}")
@@ -1004,6 +1004,7 @@ def main(args):
         
         # Get checkpoint plan for this epoch
         checkpoint_steps = epoch_checkpoint_plans[epoch]
+        epoch_checkpoints_saved = []  # Track which checkpoints were saved this epoch
         
         for batch_idx, batch in enumerate(dataloader):
             global_step += 1
@@ -1070,6 +1071,7 @@ def main(args):
                 logger.info(
                     f"Saving checkpoint to {current_model_directory} (Epoch {current_epoch}, Update Step {epoch_update_step}/{steps_in_epoch.get(current_epoch, 0)})"
                 )
+                epoch_checkpoints_saved.append(epoch_update_step)
 
                 # Save tokenizer first
                 tokenizer.save_pretrained(current_model_directory)
@@ -1217,6 +1219,52 @@ def main(args):
             # Stop training when planned total updates are reached
             if update_step >= total_training_steps:
                 break
+
+        # End of epoch: Log checkpoint summary and add fallback checkpoint if none saved
+        if global_rank == 0:
+            if epoch_checkpoints_saved:
+                logger.info(f"Epoch {current_epoch} completed. Checkpoints saved at steps: {epoch_checkpoints_saved}")
+            else:
+                logger.warning(f"Epoch {current_epoch} completed with NO checkpoints saved! Adding fallback checkpoint at step {epoch_update_step}")
+                # Save fallback checkpoint at the last step of this epoch
+                if epoch_update_step > 0:  # Only if we actually had update steps
+                    checkpoint_name = f"epoch_{current_epoch}_step_{epoch_update_step}_fallback"
+                    current_model_directory = f"{args.save_dir}/model_{checkpoint_name}"
+                    logger.info(f"Saving fallback checkpoint to {current_model_directory}")
+                    
+                    # Save tokenizer first
+                    tokenizer.save_pretrained(current_model_directory)
+                    
+                    # Update model config with current tokenizer details
+                    model_to_save = model.module if hasattr(model, 'module') else model
+                    if hasattr(model_to_save, 'config'):
+                        model_to_save.config.pad_token_id = tokenizer.pad_token_id
+                        model_to_save.config.vocab_size = len(tokenizer.get_vocab())
+                    
+                    os.makedirs(args.save_dir, exist_ok=True)
+                    model_to_save.save_pretrained(current_model_directory, max_shard_size='100GB')
+                    
+                    # Save optimizer and training state for fallback checkpoint too
+                    optimizer_checkpoint = {
+                        "optimizer": optimizer.state_dict(),
+                        "scheduler": scheduler.state_dict(),
+                        "update_step": update_step,
+                        "global_step": global_step,
+                        "config": run_config,
+                        "wandb": wandb.run.dir,
+                        "dtype": args.dtype,
+                    }
+                    torch.save(optimizer_checkpoint, f"{current_model_directory}/optimizer.pt")
+                    
+                    training_state_checkpoint = {
+                        "global_step": global_step,
+                        "update_step": update_step,
+                        "tokens_seen": tokens_seen,
+                        "tokens_seen_before": tokens_seen_before,
+                        "update_time": update_time,
+                    }
+                    with open(f"{current_model_directory}/training_state.json", "w") as f:
+                        json.dump(training_state_checkpoint, f, indent=4)
 
         # Early exit outer loop if we have reached the planned total updates
         if update_step >= total_training_steps:
