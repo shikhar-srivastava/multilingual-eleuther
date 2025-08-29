@@ -609,10 +609,28 @@ def main(args):
         base = os.path.splitext(os.path.basename(json_path))[0]
         out_dir = os.path.join(os.path.dirname(json_path), base + "_hf")
         os.makedirs(out_dir, exist_ok=True)
+
+        # If already prepared and valid, return early (idempotent)
+        tokenizer_json_path = os.path.join(out_dir, 'tokenizer.json')
+        if os.path.isfile(tokenizer_json_path):
+            try:
+                with open(tokenizer_json_path, 'r', encoding='utf-8') as f_check:
+                    json.load(f_check)
+                return out_dir
+            except Exception:
+                # Corrupted/incomplete file, will rewrite below
+                pass
+
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        with open(os.path.join(out_dir, 'tokenizer.json'), 'w', encoding='utf-8') as f:
+
+        # Atomic write for tokenizer.json to avoid readers seeing partial content
+        tmp_tok_path = tokenizer_json_path + '.tmp'
+        with open(tmp_tok_path, 'w', encoding='utf-8') as f:
             json.dump(data, f)
+        os.replace(tmp_tok_path, tokenizer_json_path)
+
+        # Build special tokens map
         special_map = {}
         unk = data.get('model', {}).get('unk_token')
         if isinstance(unk, str):
@@ -636,13 +654,25 @@ def main(args):
                 special_map['bos_token'] = content
             if 'EOS' in upper and 'eos_token' not in special_map:
                 special_map['eos_token'] = content
-        with open(os.path.join(out_dir, 'special_tokens_map.json'), 'w', encoding='utf-8') as f:
+
+        special_map_path = os.path.join(out_dir, 'special_tokens_map.json')
+        tmp_special_path = special_map_path + '.tmp'
+        with open(tmp_special_path, 'w', encoding='utf-8') as f:
             json.dump(special_map, f)
+        os.replace(tmp_special_path, special_map_path)
+
         return out_dir
 
     load_path = resolved_tokenizer_name
     if isinstance(load_path, str) and load_path.endswith('.json') and os.path.isfile(load_path):
-        load_path = _prepare_tokenizer_dir(load_path)
+        # Prepare tokenizer directory once (rank 0) and synchronize to avoid concurrent writes
+        base = os.path.splitext(os.path.basename(load_path))[0]
+        out_dir = os.path.join(os.path.dirname(load_path), base + "_hf")
+        if 'global_rank' in locals() and global_rank == 0:
+            _prepare_tokenizer_dir(load_path)
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+        load_path = out_dir
     # Enforce AutoTokenizer load; fail loudly on error
     tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True)
     
