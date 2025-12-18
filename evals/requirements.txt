@@ -1,0 +1,18 @@
+# Core
+transformers>=4.41.0
+accelerate>=0.33.0
+huggingface_hub>=0.24.0
+datasets>=2.20.0
+safetensors>=0.4.4
+torch>=2.1.0
+numpy>=1.26.0
+scipy>=1.11.0
+protobuf>=4.25.3
+
+# LM Evaluation Harness
+lm-eval==0.4.4
+
+# Progress table
+pandas>=2.2.0
+
+# Optional: XCOMPS and others may need extra libs; keep core minimal
