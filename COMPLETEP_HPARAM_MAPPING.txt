@@ -1,0 +1,45 @@
+CompleteP and muP Hyperparameter Mapping for Scaling Experiments
+==========================================================
+
+Base Reference Model: Llama-9M
+------------------------------
+- Config: configs/llama_9m.json
+- Base Width (hidden_size): 128
+- Base Depth (num_layers): 4
+
+Target Parameterization: CompleteP (muP + Depth Scaling)
+------------------------------------------------------
+The following hyperparameters were found to be optimal in 9M coordinate 
+checks and are now fixed for all widths and depths via muTransfer:
+
+1. Learning Rate (LR): 1e-3
+   - This is the "max_lr" for the reference model.
+   - For width scaling: Automatically scaled by 1/width_multiplier.
+   - For depth scaling: Automatically scaled by depth_multiplier^(alpha-1).
+
+2. Adam Epsilon (eps): 1e-12
+   - Using a smaller base epsilon (1e-12 vs 1e-8) is critical for 
+     coordination stability in muP.
+   - Scaled by (1/width) * (depth^-alpha) in torchrun_main.py.
+
+3. Adam Momentum (beta1): 0.9
+   - Aligned with coordinate check experiments (previously 0.0 in some scripts).
+
+4. Weight Decay: 0.1
+   - Applied to hidden weights and scaled by 1/width_lr_scaling to maintain 
+     consistent regularization strength.
+
+5. Gradient Clipping: 1.0
+   - Critical for stability when alpha=1.0 at high depths.
+
+Experiment Validity Notes:
+--------------------------
+- Sequence Length: Fixed at 1024 for all models. Valid as muP transfer is 
+  largely invariant to context length.
+- Alpha (depth_alpha_exp): 
+  * Use 1.0 for theoretical CompleteP stability.
+  * Use 0.5 if encountering instability at depths > 32 layers.
+- Data: Shakespeare-char used for HParam discovery; transfers to 
+  monolingual C4 datasets (eng_latn, etc.) as muP property is 
+  dataset-independent.
+

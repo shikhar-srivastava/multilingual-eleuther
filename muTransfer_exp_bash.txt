@@ -1,0 +1,33 @@
+source ~/.bashrc && conda activate lacts && cd /localdisk/ssrivas9/multilingual-eleuther && \
+for lang in eng_latn tha_thai urd_arab amh_ethi vie_latn; do
+  echo "=== Tokenizing $lang (train) with FULL settings ===" 
+  python scripts/tokenize_and_pack.py \
+    --dataset $lang --tokenizer_type bpe_unscaled --tokenizer_vocabulary 8192 \
+    --split train --max_seq_len 1024 --max_segments -1 --prepend_cls True --include_sep True --shuffle True && \
+  echo "=== Tokenizing $lang (eval) ===" && \
+  python scripts/tokenize_and_pack.py \
+    --dataset $lang --tokenizer_type bpe_unscaled --tokenizer_vocabulary 8192 \
+    --split eval --max_seq_len 1024 --max_segments -1 --prepend_cls True --include_sep True --shuffle False
+done
+echo "=== All tokenization complete ==="
+
+
+cd /localdisk/ssrivas9/multilingual-eleuther/mutransfer_experiments
+
+# Run each on its assigned GPU
+bash launch_completep_eng.sh both out  # GPU 0
+bash launch_completep_tha.sh both out  # GPU 1
+bash launch_completep_urd.sh both out  # GPU 2
+bash launch_completep_amh.sh both out  # GPU 3
+
+bash launch_completep_eng.sh width out  # GPU 0
+bash launch_completep_tha.sh width out  # GPU 1
+bash launch_completep_urd.sh width out  # GPU 2
+bash launch_completep_amh.sh width out  # GPU 3
+
+# Vietnamese can use a different GPU if needed
+bash launch_completep_vie.sh both out 1  # Run on GPU 1 instead
+
+
+
+bash launch_all_completep_parallel.sh both out

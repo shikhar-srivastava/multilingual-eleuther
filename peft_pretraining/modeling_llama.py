@@ -82,14 +82,49 @@ class LlamaRMSNorm(nn.Module):
         self.variance_epsilon = eps
 
     def forward(self, hidden_states):
+        original_dtype = hidden_states.dtype
         variance = hidden_states.to(torch.float32).pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
 
-        # convert into half-precision if necessary
-        if self.weight.dtype in [torch.float16, torch.bfloat16]:
+        # Ensure parameter and input dtypes match for the affine transform
+        if self.weight.dtype != hidden_states.dtype:
             hidden_states = hidden_states.to(self.weight.dtype)
 
-        return self.weight * hidden_states
+        output = self.weight * hidden_states
+        # Always return in the original input dtype to avoid dtype mismatches downstream
+        if output.dtype != original_dtype:
+            output = output.to(original_dtype)
+        return output
+
+
+class LlamaLayerNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-6):
+        """
+        Standard LayerNorm (centering + normalization).
+        Alternative to RMSNorm for comparison.
+        """
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.bias = nn.Parameter(torch.zeros(hidden_size))
+        self.variance_epsilon = eps
+
+    def forward(self, hidden_states):
+        original_dtype = hidden_states.dtype
+        # Convert to fp32 for numerical stability
+        hidden_states_fp32 = hidden_states.to(torch.float32)
+        mean = hidden_states_fp32.mean(-1, keepdim=True)
+        variance = (hidden_states_fp32 - mean).pow(2).mean(-1, keepdim=True)
+        hidden_states_fp32 = (hidden_states_fp32 - mean) * torch.rsqrt(variance + self.variance_epsilon)
+        
+        # Ensure parameter and input dtypes match for the affine transform
+        if self.weight.dtype != hidden_states_fp32.dtype:
+            hidden_states_fp32 = hidden_states_fp32.to(self.weight.dtype)
+        
+        output = self.weight * hidden_states_fp32 + self.bias
+        # Always return in the original input dtype to avoid dtype mismatches downstream
+        if output.dtype != original_dtype:
+            output = output.to(original_dtype)
+        return output
 
 
 class LlamaRotaryEmbedding(torch.nn.Module):
@@ -195,21 +230,50 @@ class LlamaMLP(nn.Module):
         intermediate_size: int,
         hidden_act: str,
         scale_mlp_output: bool = False,
+        use_gelu_mlp: bool = False,
+        mup_enabled: bool = False,
+        mup_width_multiplier: float = 1.0,
     ):
         super().__init__()
-        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
-        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.act_fn = ACT2FN[hidden_act]
+        self.use_gelu_mlp = use_gelu_mlp
+        self.mup_enabled = mup_enabled
+        self.mup_width_multiplier = mup_width_multiplier
         
-        if scale_mlp_output:
-            self.down_proj.is_scaled_layer = True
-        if os.getenv('NORM_TYPE', 'pre').lower() == 'deeppost':
-            self.gate_proj.is_deeppost_layer = True
-            self.up_proj.is_deeppost_layer = True
-            self.down_proj.is_deeppost_layer = True
+        if use_gelu_mlp:
+            # Simple MLP: fc -> GELU -> proj (like GPT-2/nanoGPT)
+            self.fc = nn.Linear(hidden_size, intermediate_size, bias=False)
+            self.proj = nn.Linear(intermediate_size, hidden_size, bias=False)
+            self.act_fn = nn.GELU()
+            
+            if scale_mlp_output:
+                self.proj.is_scaled_layer = True
+            if os.getenv('NORM_TYPE', 'pre').lower() == 'deeppost':
+                self.fc.is_deeppost_layer = True
+                self.proj.is_deeppost_layer = True
+        else:
+            # SwiGLU MLP: gate * up -> down (LLAMA standard)
+            self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
+            self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
+            self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
+            self.act_fn = ACT2FN[hidden_act]
+            
+            if scale_mlp_output:
+                self.down_proj.is_scaled_layer = True
+            if os.getenv('NORM_TYPE', 'pre').lower() == 'deeppost':
+                self.gate_proj.is_deeppost_layer = True
+                self.up_proj.is_deeppost_layer = True
+                self.down_proj.is_deeppost_layer = True
+    
     def forward(self, x):
-        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        if self.use_gelu_mlp:
+            # Simple: x -> fc -> GELU -> proj
+            return self.proj(self.act_fn(self.fc(x)))
+        else:
+            # SwiGLU: x -> (gate * up) -> down
+            gate_out = self.act_fn(self.gate_proj(x))
+            up_out = self.up_proj(x)
+            product = gate_out * up_out
+            return self.down_proj(product)
 
 
 class LlamaAttention(nn.Module):
@@ -223,6 +287,12 @@ class LlamaAttention(nn.Module):
         self.head_dim = self.hidden_size // self.num_heads
         self.max_position_embeddings = getattr(config, 'max_position_embeddings', getattr(config, 'max_sequence_length', 2048))
         self.attention_dropout = getattr(config, 'attention_dropout', 0.0)
+        
+        ### Begin muP code ###
+        # muP attention scaling: use 1/d_head instead of 1/sqrt(d_head)
+        self.mup_enabled = getattr(config, 'mup_enabled', False)
+        self.mup_disable_attention_scaling = getattr(config, 'mup_disable_attention_scaling', False)
+        ### End muP code ###
         
         # Get positional embedding type from config or environment variable
         self.position_embedding_type = getattr(config, 'position_embedding_type', 'rope')
@@ -306,6 +376,15 @@ class LlamaAttention(nn.Module):
             attn_mask = attention_mask
 
         attn_dropout_p = self.attention_dropout if self.training else 0.0
+        
+        ### Begin muP code ###
+        # muP attention scaling: use 1/d_head instead of 1/sqrt(d_head) for stable transfer
+        if self.mup_enabled and not self.mup_disable_attention_scaling:
+            attention_scale = 1.0 / self.head_dim
+        else:
+            attention_scale = 1.0 / math.sqrt(self.head_dim)
+        ### End muP code ###
+        
         attn_output = torch.nn.functional.scaled_dot_product_attention(
             query_states,
             key_states,
@@ -313,6 +392,7 @@ class LlamaAttention(nn.Module):
             attn_mask=attn_mask,
             dropout_p=attn_dropout_p,
             is_causal=False,
+            scale=attention_scale,
         )
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
@@ -341,7 +421,22 @@ class LlamaDecoderLayer(nn.Module):
         self.layer_nums = config.num_hidden_layers
         self.layer_index = layer_index
         self.max_post_norm_layer = int(os.getenv('POST_NUM', '1'))
-        print(f'Initializing LlamaDecoderLayer {self.layer_index + 1}/{self.layer_nums} with norm type: {norm_type}')
+        
+        # Choose normalization layer type: RMSNorm (default) or LayerNorm
+        use_layernorm = getattr(config, 'use_layernorm', False)
+        self.norm_class = LlamaLayerNorm if use_layernorm else LlamaRMSNorm
+        
+        print(f'Initializing LlamaDecoderLayer {self.layer_index + 1}/{self.layer_nums} with norm type: {norm_type}, '
+              f'norm class: {"LayerNorm" if use_layernorm else "RMSNorm"}')
+        
+        ### Begin CompleteP code ###
+        # CompleteP residual scaling: scale residual branches by 1/(depth_multiplier ** depth_alpha_exp)
+        # This enables stable training of deep transformers
+        self.depth_alpha_enabled = getattr(config, 'depth_alpha_enabled', False)
+        depth_multiplier = getattr(config, 'depth_multiplier', 1.0)
+        depth_alpha_exp = getattr(config, 'depth_alpha_exp', 1.0)
+        self.residual_scaling = 1.0 / (depth_multiplier ** depth_alpha_exp) if self.depth_alpha_enabled else 1.0
+        ### End CompleteP code ###
         scale_attn_weights = False
         scale_mlp_output = False
 
@@ -362,95 +457,98 @@ class LlamaDecoderLayer(nn.Module):
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
             scale_mlp_output=scale_mlp_output,
+            use_gelu_mlp=getattr(config, 'use_gelu_mlp', False),
+            mup_enabled=getattr(config, 'mup_enabled', False),
+            mup_width_multiplier=getattr(config, 'mup_width_multiplier', 1.0),
         )
         
         if norm_type == 'pre' or norm_type == 'scale_pre' or norm_type == 'LNS' or norm_type == 'lns':
-            self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+            self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+            self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type== 'post' or norm_type == 'deeppost':
-            self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+            self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+            self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'sandwich':
-            self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            self.pre_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+            self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+            self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+            self.pre_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+            self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'pre_post':
             print("cur layer index is:", layer_index)
             self.max_pre_norm_layer = 7
             if self.layer_index < self.max_pre_norm_layer:
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             else:
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'pre_sandwich':
             print("cur layer index is:", layer_index)
             self.max_pre_norm_layer = 7
             if self.layer_index < self.max_pre_norm_layer:
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             else:
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.pre_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.pre_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'post_pre' or norm_type == 'scale_post_pre':
             print("cur layer index is:", layer_index)
             if self.layer_index < self.max_post_norm_layer:
                 print(f"cur layer is {layer_index}, and you're using the post norm!")
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             else:
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'scale_res_pre_norm':
             self.raw_scaling_factor_attn = nn.Parameter(torch.tensor(0.001))
             self.raw_scaling_factor_mlp = nn.Parameter(torch.tensor(0.001))
-            self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-            self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+            self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+            self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'pre_post_pre_post':
             print("cur layer index is:", layer_index)
             # For even-numbered layers, use pre-norm
             if (self.layer_index + 1) % 4 != 0:
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             else:
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'post_pre_post_pre':
             print("cur layer index is:", layer_index)
             # For even-numbered layers, use pre-norm
             if (self.layer_index + 1) % 4 != 0:
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             else:
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'mono':
             if (self.layer_index + 1) % 4 != 0:
                 # Pre-LayerNorm Only
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             else:
                 # Post-LayerNorm & Pre-LayerNorm
                 self.router = nn.Linear(config.hidden_size, 2, bias=False)
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
         elif norm_type == 'mono_reverse':
             if (self.layer_index + 1) % 4 != 0:
                 # Post-LayerNorm Only
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             else:
                 # Post-LayerNorm & Pre-LayerNorm
                 self.router = nn.Linear(config.hidden_size, 2, bias=False)
-                self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_feedforward_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-                self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+                self.input_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_feedforward_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
+                self.post_attention_layernorm = self.norm_class(config.hidden_size, eps=config.rms_norm_eps)
             
     def forward(
         self,
@@ -478,7 +576,8 @@ class LlamaDecoderLayer(nn.Module):
         norm_type = os.getenv('NORM_TYPE', 'pre').lower()
         
         if norm_type == 'pre' or norm_type == 'scale_pre':
-            #  # Layer 1: Self-Attention
+            ### Begin CompleteP code ###
+            # Pre-norm with CompleteP residual scaling
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)                
             hidden_states, self_attn_weights, present_key_value = self.self_attn(
@@ -489,14 +588,14 @@ class LlamaDecoderLayer(nn.Module):
                 output_attentions=output_attentions,
                 use_cache=use_cache,
             )
-            hidden_states = residual + hidden_states
+            hidden_states = residual + self.residual_scaling * hidden_states
 
             # Layer 2: Feed-Forward Network (FFN)
-
             residual = hidden_states
             hidden_states = self.post_attention_layernorm(hidden_states)            
             hidden_states = self.mlp(hidden_states)
-            hidden_states = residual + hidden_states
+            hidden_states = residual + self.residual_scaling * hidden_states
+            ### End CompleteP code ###
 
         
         elif norm_type == 'LNS' or norm_type == 'lns':
@@ -933,6 +1032,7 @@ class LlamaPreTrainedModel(PreTrainedModel):
         std = self.config.initializer_range
         num_layers = self.config.num_hidden_layers
         scaled_std = std / (2 * num_layers) ** 0.5
+        
         if isinstance(module, nn.Linear):
             if hasattr(module, "is_deeppost_layer") and module.is_deeppost_layer:
                 torch.nn.init.xavier_normal_(module.weight, gain=(num_layers * 8) ** 0.25)
@@ -948,9 +1048,34 @@ class LlamaPreTrainedModel(PreTrainedModel):
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=(2 / 5) ** 0.5)
+            module.weight.data.normal_(mean=0.0, std=std)
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
+    
+    ### Begin muP code ###
+    def _apply_mup_init(self):
+        """Apply muP initialization scaling to hidden layer weights after standard init."""
+        mup_enabled = getattr(self.config, 'mup_enabled', False)
+        if not mup_enabled:
+            return
+            
+        mup_width_multiplier = getattr(self.config, 'mup_width_multiplier', 1.0)
+        std = self.config.initializer_range
+        mup_hidden_std = std / math.sqrt(mup_width_multiplier)
+        
+        # Hidden weight patterns for LLaMA architecture
+        hidden_patterns = [
+            'q_proj.weight', 'k_proj.weight', 'v_proj.weight', 'o_proj.weight',
+            'gate_proj.weight', 'up_proj.weight', 'down_proj.weight',
+            'fc.weight', 'proj.weight'
+        ]
+        
+        for name, param in self.named_parameters():
+            for pattern in hidden_patterns:
+                if name.endswith(pattern):
+                    torch.nn.init.normal_(param, mean=0.0, std=mup_hidden_std)
+                    break
+    ### End muP code ###
 
     def _set_gradient_checkpointing(self, module, value=False):
         if isinstance(module, LlamaModel):
@@ -1041,6 +1166,16 @@ class LlamaModel(LlamaPreTrainedModel):
         # Get positional embedding type and max position embeddings
         self.position_embedding_type = getattr(config, 'position_embedding_type', 'rope')
         self.max_position_embeddings = getattr(config, 'max_position_embeddings', getattr(config, 'max_sequence_length', 2048))
+        
+        ### Begin muP code ###
+        # muP configuration for embedding scaling
+        self.mup_enabled = getattr(config, 'mup_enabled', False)
+        self.mup_input_alpha = getattr(config, 'mup_input_alpha', 1.0)
+        ### End muP code ###
+        
+        # Choose normalization layer type: RMSNorm (default) or LayerNorm
+        use_layernorm = getattr(config, 'use_layernorm', False)
+        norm_class = LlamaLayerNorm if use_layernorm else LlamaRMSNorm
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         
@@ -1057,7 +1192,7 @@ class LlamaModel(LlamaPreTrainedModel):
             self.position_embeddings = None
         
         self.layers = nn.ModuleList([LlamaDecoderLayer(config, _idx) for _idx in range(config.num_hidden_layers)])
-        self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = norm_class(config.hidden_size, eps=config.rms_norm_eps)
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
@@ -1147,6 +1282,12 @@ class LlamaModel(LlamaPreTrainedModel):
         if self.position_embeddings is not None:
             inputs_embeds = self.position_embeddings(inputs_embeds, position_ids)
         
+        ### Begin muP code ###
+        # Apply muP input scaling
+        if self.mup_enabled:
+            inputs_embeds = inputs_embeds * self.mup_input_alpha
+        ### End muP code ###
+        
         # embed positions
         if attention_mask is None:
             attention_mask = torch.ones(
@@ -1233,9 +1374,21 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         self.model = LlamaModel(config)
 
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        
+        ### Begin muP code ###
+        # muP configuration for output logit scaling
+        self.mup_enabled = getattr(config, 'mup_enabled', False)
+        self.mup_output_alpha = getattr(config, 'mup_output_alpha', 1.0)
+        self.mup_width_multiplier = getattr(config, 'mup_width_multiplier', 1.0)
+        ### End muP code ###
 
         # Initialize weights and apply final processing
         self.post_init()
+        
+        ### Begin muP code ###
+        # Apply muP initialization scaling after standard init
+        self._apply_mup_init()
+        ### End muP code ###
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -1316,7 +1469,16 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         )
 
         hidden_states = outputs[0]
-        logits = self.lm_head(hidden_states)
+        
+        ### Begin muP code ###
+        # muP output scaling: scale by mup_output_alpha / mup_width_multiplier
+        # This ensures stable logit magnitudes across width scaling
+        if self.mup_enabled:
+            hidden_states_scaled = hidden_states * (self.mup_output_alpha / self.mup_width_multiplier)
+            logits = self.lm_head(hidden_states_scaled)
+        else:
+            logits = self.lm_head(hidden_states)
+        ### End muP code ###
 
         loss = None
         if labels is not None:

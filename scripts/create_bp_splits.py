@@ -10,8 +10,8 @@ After generating files, update a JSON index in the codebase:
 
 Usage:
   python scripts/create_bp_splits.py \
-    --input_root /scratch/ssrivas9/catherinearnett/monolingual_training_data \
-    --output_root /scratch/ssrivas9/catherinearnett/monolingual_training_data_bp
+    --input_root /localdisk/ssrivas9/catherinearnett/monolingual_training_data \
+    --output_root /localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp
 
 Notes:
 - BP sizes are interpreted in GiB (1024**3 bytes) for deterministic slicing.
@@ -92,7 +92,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_root", type=str, required=True)
     parser.add_argument("--output_root", type=str, required=True)
-    parser.add_argument("--codebase_root", type=str, default="/scratch/ssrivas9/multilingual-eleuther")
+    parser.add_argument("--codebase_root", type=str, default="/localdisk/ssrivas9/multilingual-eleuther")
     parser.add_argument("--decimal_gb", action="store_true", help="Use 1e9 bytes per GB instead of GiB (1024**3).")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()

@@ -16,3 +16,9 @@ debug_130m_pre_*/*
 debug_mono*/*
 logs/*
 mono_gold_*/*
+coord_check_*/*/out/*
+coord_check_*/*/*/out/*
+data/shakespeare_char/*
+*.json
+*.csv
+*.log

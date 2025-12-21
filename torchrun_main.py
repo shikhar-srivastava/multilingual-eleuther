@@ -35,6 +35,7 @@ from utils.activation_tracker import create_activation_tracker, log_activation_s
 from utils.enhanced_activation_tracker import create_enhanced_activation_tracker, log_enhanced_activation_summary
 from utils.weight_tracker import create_weight_tracker, log_weight_summary
 from utils.byte_consumption_plotter import log_byte_consumption_to_wandb, log_final_byte_summary
+from functools import partial
 
 # # Optional import for bitsandbytes - not currently used in main training loop
 # try:
@@ -365,6 +366,8 @@ def parse_args(args):
     parser.add_argument("--save_dir", type=str, default=None)
     parser.add_argument("--tags", type=str, default=None)
     parser.add_argument("--dtype", type=str, default="bfloat16" if torch.cuda.is_bf16_supported() else "float32")
+    parser.add_argument("--rmsnorm_fp32", action="store_true", default=True,
+                        help="Keep RMSNorm weights in float32 while model runs in bf16/fp16 for better update precision (default: True)")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--name", type=str, default="test")
@@ -372,6 +375,7 @@ def parse_args(args):
     parser.add_argument("--run_name", type=str, default="default")
     # beta1 for adafactor
     parser.add_argument("--beta1", type=float, default=0.0)
+    parser.add_argument("--beta2", type=float, default=0.95)
     
     # (removed) GaLore parameters
     
@@ -435,7 +439,7 @@ def parse_args(args):
     parser.add_argument("--monolingual-dataset", type=str, required=True,
                         choices=["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn"],
                         help="Monolingual dataset to use for training. Must be one of: eng_latn, tha_thai, urd_arab, amh_ethi, vie_latn. "
-                             "Files are expected at /scratch/ssrivas9/catherinearnett/monolingual_training_data/")
+                             "Files are expected at /localdisk/ssrivas9/catherinearnett/monolingual_training_data/")
     
     # Hugging Face Hub integration flags
     parser.add_argument("--hf_repo_name", type=str, default=None,
@@ -450,6 +454,38 @@ def parse_args(args):
                         help="Deprecated/no-op: retained for CLI compatibility")
     parser.add_argument("--log_bytes_every", type=int, default=100,
                         help="Deprecated/no-op: retained for CLI compatibility")
+    
+    ### Begin muP code ###
+    # muP (maximal update parameterization) settings
+    parser.add_argument("--mup_enabled", action="store_true", default=False,
+                        help="Enable muP (maximal update parameterization). If False, all other mup variables are ignored.")
+    parser.add_argument("--mup_disable_attention_scaling", action="store_true", default=False,
+                        help="Use 1/sqrt(d_head) attention scaling instead of muP's 1/d_head (for ablation studies)")
+    parser.add_argument("--mup_disable_hidden_lr_scaling", action="store_true", default=False,
+                        help="Disable muP hidden LR adjustment (for ablation studies)")
+    parser.add_argument("--mup_width_multiplier", type=float, default=1.0,
+                        help="Width multiplier = width / base_width. base_width is typically 256.")
+    parser.add_argument("--mup_input_alpha", type=float, default=1.0,
+                        help="Optional tunable multiplier applied to input embedding forward pass output")
+    parser.add_argument("--mup_output_alpha", type=float, default=1.0,
+                        help="Optional tunable multiplier applied to output unembedding forward pass output")
+    parser.add_argument("--mup_base_width", type=int, default=256,
+                        help="Base width for muP calculations (used if mup_width_multiplier not specified directly)")
+    parser.add_argument("--mup_enable_coord_check_logging", action="store_true", default=False,
+                        help="Enable coordinate check logging (tracks output.abs().mean() of various layers)")
+    ### End muP code ###
+    
+    ### Begin CompleteP code ###
+    # CompleteP (Complete Parameterization for deep transformers) settings
+    parser.add_argument("--depth_alpha_enabled", action="store_true", default=False,
+                        help="Enable CompleteP depth scaling. Requires mup_enabled=True for LR correction.")
+    parser.add_argument("--depth_multiplier", type=float, default=1.0,
+                        help="Depth multiplier = depth / base_depth. base_depth is typically 2.")
+    parser.add_argument("--depth_alpha_exp", type=float, default=1.0,
+                        help="Exponent for depth scaling in [0.5, 1]. Controls residual scaling: x = x + depth_multiplier**(-depth_alpha_exp) * branch(x)")
+    parser.add_argument("--depth_base_depth", type=int, default=2,
+                        help="Base depth for CompleteP calculations (used if depth_multiplier not specified directly)")
+    ### End CompleteP code ###
 
     # Advanced efficiency optimizations
     # (removed: packing flags)
@@ -470,8 +506,8 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
     """
     import math, os, json
     assert monolingual_dataset is not None, "monolingual_dataset is required for eval"
-    tokenized_root = "/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
-    bp_index_path = "/scratch/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
+    tokenized_root = "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
+    bp_index_path = "/localdisk/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
     with open(bp_index_path, 'r', encoding='utf-8') as f:
         bp_index = json.load(f)
     # Use the same tokenizer basename as training to guarantee identical tokenizer/eval path
@@ -479,8 +515,8 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
         tokenizer_basename = args._tokenizer_basename
     else:
         tok_root_map = {
-            "bpe_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
-            "unigram_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
+            "bpe_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
+            "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
         }
         tok_root = tok_root_map[args.tokenizer_type]
         tok_file = (f"bpe_{monolingual_dataset}_{args.tokenizer_vocabulary}_300mb_unscaled.json"
@@ -515,6 +551,32 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
         return 0.0, 0, None, None
     avg_loss = (total_loss / total_batches).item()
     return avg_loss, total_tokens, None, None
+
+
+def _cast_rmsnorm_weights_to_fp32(model) -> int:
+    """Convert RMSNorm weights to float32 in-place.
+    
+    Keeping norm weights in float32 improves update precision when the
+    model runs in reduced precision (bf16/fp16), because small updates from 1.0
+    can underflow or be quantized away in low-precision formats.
+    
+    Returns the number of RMSNorm modules converted.
+    """
+    from peft_pretraining.modeling_llama import LlamaRMSNorm
+    
+    rms_converted = 0
+    
+    for module_name, module in model.named_modules():
+        if isinstance(module, LlamaRMSNorm):
+            if hasattr(module, "weight") and module.weight is not None and module.weight.dtype != torch.float32:
+                module.weight.data = module.weight.data.to(torch.float32)
+                rms_converted += 1
+            # Also convert bias if present (though standard RMSNorm doesn't use bias)
+            if hasattr(module, "bias") and module.bias is not None and module.bias.dtype != torch.float32:
+                module.bias.data = module.bias.data.to(torch.float32)
+    
+    logger.info(f"Converted {rms_converted} RMSNorm weight modules to float32")
+    return rms_converted
 
 
 def main(args):
@@ -576,7 +638,7 @@ def main(args):
     logger.info("*" * 40)
     
     # Resolve pre-tokenized paths (BP index) and tokenizer settings
-    bp_index_path = "/scratch/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
+    bp_index_path = "/localdisk/ssrivas9/multilingual-eleuther/configs/monolingual_bp_index.json"
     bp_index = None
     if os.path.exists(bp_index_path):
         try:
@@ -589,8 +651,8 @@ def main(args):
     # Resolve tokenizer path based on tokenizer_type and tokenizer_vocabulary if available
     resolved_tokenizer_name = args.tokenizer_name
     tok_root_map = {
-        "bpe_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
-        "unigram_unscaled": "/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
+        "bpe_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
+        "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
     }
     if args.tokenizer_type in tok_root_map:
         tok_root = tok_root_map[args.tokenizer_type]
@@ -677,7 +739,7 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True)
     
     # Use pre-tokenized ints-per-line
-    tokenized_root = "/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
+    tokenized_root = "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
     tokenizer_basename = None
     if os.path.isfile(resolved_tokenizer_name):
         tokenizer_basename = os.path.splitext(os.path.basename(resolved_tokenizer_name))[0]
@@ -807,6 +869,53 @@ def main(args):
         logger.info(f"Overriding position_embedding_type from config to: {args.position_embedding_type}")
         model_config.position_embedding_type = args.position_embedding_type
     
+    # Set RMSNorm FP32 flag in config (default: True for better numerical stability)
+    model_config.norm_weights_fp32 = bool(getattr(args, 'rmsnorm_fp32', True))
+    if model_config.norm_weights_fp32:
+        logger.info("RMSNorm weights will be kept in float32 for better update precision")
+    
+    ### Begin muP code ###
+    # Configure muP settings in model config
+    if args.mup_enabled:
+        # Compute width multiplier from base width if not explicitly set
+        current_width = model_config.hidden_size
+        if args.mup_width_multiplier == 1.0 and args.mup_base_width != current_width:
+            args.mup_width_multiplier = current_width / args.mup_base_width
+            logger.info(f"Computed mup_width_multiplier = {current_width} / {args.mup_base_width} = {args.mup_width_multiplier}")
+        
+        model_config.mup_enabled = True
+        model_config.mup_disable_attention_scaling = args.mup_disable_attention_scaling
+        model_config.mup_width_multiplier = args.mup_width_multiplier
+        model_config.mup_input_alpha = args.mup_input_alpha
+        model_config.mup_output_alpha = args.mup_output_alpha
+        
+        logger.info(f"muP enabled: width_multiplier={args.mup_width_multiplier}, "
+                   f"input_alpha={args.mup_input_alpha}, output_alpha={args.mup_output_alpha}")
+    else:
+        model_config.mup_enabled = False
+    ### End muP code ###
+    
+    ### Begin CompleteP code ###
+    # Configure CompleteP settings in model config
+    if args.depth_alpha_enabled:
+        # Compute depth multiplier from base depth if not explicitly set
+        current_depth = model_config.num_hidden_layers
+        if args.depth_multiplier == 1.0 and args.depth_base_depth != current_depth:
+            args.depth_multiplier = current_depth / args.depth_base_depth
+            logger.info(f"Computed depth_multiplier = {current_depth} / {args.depth_base_depth} = {args.depth_multiplier}")
+        
+        model_config.depth_alpha_enabled = True
+        model_config.depth_multiplier = args.depth_multiplier
+        model_config.depth_alpha_exp = args.depth_alpha_exp
+        
+        logger.info(f"CompleteP enabled: depth_multiplier={args.depth_multiplier}, "
+                   f"depth_alpha_exp={args.depth_alpha_exp}")
+    else:
+        model_config.depth_alpha_enabled = False
+        model_config.depth_multiplier = 1.0
+        model_config.depth_alpha_exp = 1.0
+    ### End CompleteP code ###
+    
     # Build dataloader from pretokenized ints
     from peft_pretraining.dataloader import build_intline_collate_fn
     ds = create_dataset_for_epoch(1)  # IntLineIterableDataset
@@ -878,6 +987,10 @@ def main(args):
 
     if args.dtype in ["bf16", "bfloat16"]:
         model = model.to(device=device, dtype=torch.bfloat16)
+        # Cast RMSNorm weights back to fp32 for better update precision if flag is set
+        if getattr(args, 'rmsnorm_fp32', True) or bool(getattr(model_config, 'norm_weights_fp32', False)):
+            _cast_rmsnorm_weights_to_fp32(model)
+            logger.info("Enabled norm weights fp32: keeping RMSNorm weights in float32 while model runs in bfloat16")
     else:
         model = model.to(device=device)
 
@@ -945,10 +1058,137 @@ def main(args):
         )
         logger.info(f"Weight tracker initialized: {weight_tracker.get_summary()}")
     
-    if args.optimizer.lower() == "adam":
-        optimizer = torch.optim.Adam(trainable_params, lr=args.lr, weight_decay=args.weight_decay, eps=args.eps)
+    ### Begin muP/CompleteP code ###
+    # Configure optimizer with muP/CompleteP learning rate scaling
+    if args.mup_enabled and not args.mup_disable_hidden_lr_scaling:
+        # Create parameter groups with muP/CompleteP LR scaling
+        emb_params = []
+        hidden_norm_params = []
+        hidden_weight_params = []
+        hidden_bias_params = []
+        final_norm_params = []
+        
+        raw_model = model.module if hasattr(model, 'module') else model
+        for name, param in raw_model.named_parameters():
+            if not param.requires_grad:
+                continue
+            
+            # Embedding parameters (no LR scaling)
+            if 'embed_tokens' in name or 'position_embeddings' in name:
+                emb_params.append(param)
+            # Final layer norm (no LR scaling)
+            elif 'model.norm.' in name:
+                final_norm_params.append(param)
+            # Hidden layer norms
+            elif 'layernorm' in name.lower() or 'input_layernorm' in name or 'post_attention_layernorm' in name:
+                hidden_norm_params.append(param)
+            # Hidden layer weights (Q, K, V, O proj, MLP)
+            elif param.dim() >= 2 and ('layers.' in name):
+                hidden_weight_params.append(param)
+            # Hidden layer biases
+            elif param.dim() < 2 and ('layers.' in name):
+                hidden_bias_params.append(param)
+            # LM head (output layer)
+            elif 'lm_head' in name:
+                emb_params.append(param)  # Output layer gets same treatment as embedding
+            else:
+                # Default to hidden weight treatment
+                if param.dim() >= 2:
+                    hidden_weight_params.append(param)
+                else:
+                    hidden_bias_params.append(param)
+        
+        # Compute LR scaling factors
+        width_lr_scaling = 1.0 / args.mup_width_multiplier
+        depth_lr_scaling = args.depth_multiplier ** (args.depth_alpha_exp - 1) if args.depth_alpha_enabled else 1.0
+        
+        logger.info(f"muP LR scaling: width_lr_scaling={width_lr_scaling}, depth_lr_scaling={depth_lr_scaling}")
+        
+        # Compute adjusted adam_eps for CompleteP
+        adam_eps = args.eps
+        if args.depth_alpha_enabled:
+            adam_eps *= (1 / args.mup_width_multiplier) * (args.depth_multiplier ** (-1 * args.depth_alpha_exp))
+            logger.info(f"CompleteP adjusted adam_eps: {adam_eps}")
+        
+        if args.depth_alpha_enabled:
+            ### Begin CompleteP code ###
+            optim_groups = [
+                {
+                    'params': emb_params,
+                    'weight_decay': args.weight_decay,
+                    'lr_scale': 1.0,
+                },
+                {
+                    'params': hidden_norm_params,
+                    'weight_decay': 0.0,
+                    'lr_scale': depth_lr_scaling,
+                },
+                {
+                    'params': hidden_weight_params,
+                    'weight_decay': args.weight_decay / width_lr_scaling if width_lr_scaling != 0 else args.weight_decay,
+                    'lr_scale': width_lr_scaling * depth_lr_scaling,
+                },
+                {
+                    'params': hidden_bias_params,
+                    'weight_decay': 0.0,
+                    'lr_scale': depth_lr_scaling,
+                },
+                {
+                    'params': final_norm_params,
+                    'weight_decay': 0.0,
+                    'lr_scale': 1.0,
+                },
+            ]
+            ### End CompleteP code ###
+        else:
+            ### Begin muP code ###
+            optim_groups = [
+                {
+                    'params': emb_params,
+                    'weight_decay': args.weight_decay,
+                    'lr_scale': 1.0,
+                },
+                {
+                    'params': hidden_norm_params,
+                    'weight_decay': 0.0,
+                    'lr_scale': 1.0,
+                },
+                {
+                    'params': hidden_weight_params,
+                    'weight_decay': args.weight_decay,
+                    'lr_scale': width_lr_scaling,
+                },
+                {
+                    'params': hidden_bias_params,
+                    'weight_decay': 0.0,
+                    'lr_scale': 1.0,
+                },
+                {
+                    'params': final_norm_params,
+                    'weight_decay': 0.0,
+                    'lr_scale': 1.0,
+                },
+            ]
+            ### End muP code ###
+        
+        # Filter out empty groups
+        optim_groups = [g for g in optim_groups if len(g['params']) > 0]
+        
+        # Log parameter group info
+        for i, g in enumerate(optim_groups):
+            logger.info(f"Param group {i}: {len(g['params'])} params, lr_scale={g['lr_scale']}, weight_decay={g['weight_decay']}")
+        
+        if args.optimizer.lower() == "adam":
+            optimizer = torch.optim.Adam(optim_groups, lr=args.lr, weight_decay=0.0, eps=adam_eps, betas=(args.beta1, args.beta2))  # weight_decay handled per-group
+        else:
+            raise ValueError(f"Optimizer {args.optimizer} not supported for muP")
     else:
-        raise ValueError(f"Optimizer {args.optimizer} not supported")
+        # Standard optimizer without muP LR scaling
+        if args.optimizer.lower() == "adam":
+            optimizer = torch.optim.Adam(trainable_params, lr=args.lr, weight_decay=args.weight_decay, eps=args.eps, betas=(args.beta1, args.beta2))
+        else:
+            raise ValueError(f"Optimizer {args.optimizer} not supported")
+    ### End muP/CompleteP code ###
 
     
     scheduler = training_utils.get_scheculer(
@@ -1000,6 +1240,14 @@ def main(args):
     training_start_time = time.time()  # Track training start time for byte consumption analysis
     update_time = time.time()
     local_step = 0  # when continue_from is used, local_step != global_step
+    
+    ### Begin muP code ###
+    # Coordinate check logging setup
+    coord_check_dict = None
+    coord_check_handles = []
+    if args.mup_enable_coord_check_logging and global_rank == 0:
+        logger.info("Coordinate check logging enabled")
+    ### End muP code ###
 
     # ##############################
     # EPOCH-BASED TRAINING LOOP
@@ -1057,6 +1305,39 @@ def main(args):
             # Weight tracking logic - track weights before forward pass
             if weight_tracker is not None and weight_tracker.step(global_step):
                 weight_tracker.track_weights()
+            
+            ### Begin muP code ###
+            # Coordinate check logging - register hooks before forward pass
+            if args.mup_enable_coord_check_logging and global_rank == 0:
+                coord_check_dict = {
+                    'token_embedding': [],
+                    'attn': [],
+                    'mlp': [],
+                    'lm_head': [],
+                    'last_layer': []
+                }
+                def coord_check_hook(module, input, output, key):
+                    with torch.no_grad():
+                        if isinstance(output, tuple):
+                            output = output[0]
+                        coord_check_dict[key].append(output.abs().mean().item())
+                
+                coord_check_handles = []
+                raw_model_for_hooks = model.module if hasattr(model, 'module') else model
+                n_layers = raw_model_for_hooks.config.num_hidden_layers
+                
+                for module_name, module in raw_model_for_hooks.named_modules():
+                    if module_name == 'model.embed_tokens':
+                        coord_check_handles.append(module.register_forward_hook(partial(coord_check_hook, key='token_embedding')))
+                    elif module_name.endswith('.self_attn'):
+                        coord_check_handles.append(module.register_forward_hook(partial(coord_check_hook, key='attn')))
+                    elif module_name.endswith('.mlp'):
+                        coord_check_handles.append(module.register_forward_hook(partial(coord_check_hook, key='mlp')))
+                    elif module_name == 'lm_head':
+                        coord_check_handles.append(module.register_forward_hook(partial(coord_check_hook, key='lm_head')))
+                    elif module_name == f'model.layers.{n_layers - 1}':
+                        coord_check_handles.append(module.register_forward_hook(partial(coord_check_hook, key='last_layer')))
+            ### End muP code ###
 
             # Standard loss calculation
             loss = model(**batch, labels=labels).loss
@@ -1064,6 +1345,15 @@ def main(args):
             # Stop activation tracking after forward pass
             if activation_tracker is not None and activation_tracker.is_tracking:
                 activation_tracker.stop_tracking()
+            
+            ### Begin muP code ###
+            # Remove coordinate check hooks after forward pass
+            if args.mup_enable_coord_check_logging and global_rank == 0:
+                for handle in coord_check_handles:
+                    handle.remove()
+                coord_check_handles = []
+            ### End muP code ###
+            
             scaled_loss = loss / args.gradient_accumulation
             scaled_loss.backward()
 
@@ -1083,6 +1373,16 @@ def main(args):
 
             optimizer.step()
             scheduler.step()
+            
+            ### Begin muP code ###
+            # Apply per-group LR scaling after scheduler step (for muP/CompleteP)
+            if args.mup_enabled and not args.mup_disable_hidden_lr_scaling:
+                base_lr = scheduler.get_last_lr()[0]
+                for param_group in optimizer.param_groups:
+                    lr_scale = param_group.get('lr_scale', 1.0)
+                    param_group['lr'] = base_lr * lr_scale
+            ### End muP code ###
+            
             optimizer.zero_grad()
             # Reset micro accumulation counter only after performing an optimizer update
             micro_step = 0
@@ -1206,6 +1506,14 @@ def main(args):
                     "throughput_examples": args.total_batch_size / update_time,
                     "throughput_batches": batches_in_update / update_time,
                 }
+                
+                ### Begin muP code ###
+                # Add coordinate check metrics if enabled
+                if args.mup_enable_coord_check_logging and coord_check_dict is not None:
+                    for key in coord_check_dict:
+                        if coord_check_dict[key]:
+                            metrics_to_log[key + '_act_abs_mean'] = np.mean(coord_check_dict[key])
+                ### End muP code ###
                 
                 # Add byte tracking metrics if enabled
                 # (removed: dataset byte metrics)
