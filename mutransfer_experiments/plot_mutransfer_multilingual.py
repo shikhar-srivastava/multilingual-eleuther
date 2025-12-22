@@ -508,6 +508,147 @@ def plot_optimal_lr_transfer(all_results, languages, scale_values, lrs,
     return fig
 
 
+def plot_all_completep_unified(all_results, languages, scale_values, lrs,
+                                experiment_type='width', output_path=None):
+    """
+    Create a unified plot showing ALL CompleteP curves for all languages on the same axes.
+    
+    This allows direct comparison of muTransfer behavior across languages.
+    Each language gets a different color, each width/depth gets a different line style.
+    """
+    setup_matplotlib_style()
+    
+    # More elegant figure size
+    fig, ax = plt.subplots(1, 1, figsize=(9, 6))
+    
+    scale_label = 'Width' if experiment_type == 'width' else 'Depth'
+    
+    # Refined line styles for different scales - more distinct
+    linestyles = ['-', '--', '-.', ':']
+    markers = ['o', 's', '^', 'D']
+    marker_sizes = [6, 5, 6, 5]
+    
+    # Filter out Vietnamese
+    languages = [l for l in languages if l != 'vie_latn']
+    
+    # Track which scales have data (for legend)
+    scales_with_data = set()
+    
+    # Plot each language
+    for lang in languages:
+        lang_info = LANGUAGES.get(lang, {'name': lang, 'color': '#666666'})
+        results = all_results.get(lang, {}).get('completep', {})
+        
+        if not results:
+            continue
+        
+        # Plot each scale value
+        for scale_idx, scale_val in enumerate(scale_values):
+            if scale_val not in results:
+                continue
+            
+            avg_losses = []
+            sem_losses = []
+            lrs_to_plot = []
+            
+            for lr in lrs:
+                if lr in results[scale_val]:
+                    avg_losses.append(results[scale_val][lr]['mean'])
+                    sem_losses.append(results[scale_val][lr]['sem'])
+                    lrs_to_plot.append(lr)
+            
+            if not lrs_to_plot:
+                continue
+            
+            scales_with_data.add(scale_val)
+            avg_losses = np.array(avg_losses)
+            sem_losses = np.array(sem_losses)
+            
+            linestyle = linestyles[scale_idx % len(linestyles)]
+            marker = markers[scale_idx % len(markers)]
+            ms = marker_sizes[scale_idx % len(marker_sizes)]
+            
+            # Convert LRs to log2 for plotting
+            lrs_log2 = [np.log2(lr) for lr in lrs_to_plot]
+            
+            line, = ax.plot(lrs_log2, avg_losses,
+                           marker=marker,
+                           color=lang_info['color'],
+                           markersize=ms,
+                           linewidth=2,
+                           linestyle=linestyle,
+                           alpha=0.9,
+                           markeredgecolor='white',
+                           markeredgewidth=0.5)
+            ax.fill_between(lrs_log2,
+                           avg_losses - sem_losses,
+                           avg_losses + sem_losses,
+                           color=lang_info['color'],
+                           alpha=0.12)
+    
+    # X-axis: powers of 2
+    ax.set_xlabel('Learning Rate', fontsize=12, fontweight='medium')
+    ax.set_ylabel('Best Loss', fontsize=12, fontweight='medium')
+    
+    # Set x-ticks at integer powers of 2 with proper superscript notation
+    x_ticks = [-14, -12, -10, -8, -6, -4]
+    ax.set_xticks(x_ticks)
+    # Use Unicode superscripts for clean display
+    superscript_map = {'-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', 
+                       '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹'}
+    def to_superscript(n):
+        return ''.join(superscript_map.get(c, c) for c in str(n))
+    ax.set_xticklabels([f'2{to_superscript(x)}' for x in x_ticks])
+    
+    # Clean title
+    ax.set_title(f'CompleteP: {scale_label} Scaling Across Languages', 
+                 fontsize=13, fontweight='bold', pad=15)
+    
+    # Create custom legend with two parts
+    # 1. Languages (colors) - clean boxes
+    lang_handles = [Line2D([0], [0], color=LANGUAGES[lang]['color'], linewidth=3, 
+                           label=LANGUAGES[lang]['name'], solid_capstyle='round') 
+                   for lang in languages 
+                   if lang in all_results and 'completep' in all_results.get(lang, {})]
+    
+    # 2. Scales (line styles) - only show those with data
+    scale_handles = []
+    for i, sv in enumerate(scale_values):
+        if sv in scales_with_data:
+            scale_handles.append(
+                Line2D([0], [0], color='#555555', linewidth=2,
+                       linestyle=linestyles[i % len(linestyles)],
+                       marker=markers[i % len(markers)],
+                       markersize=5,
+                       label=f'{sv}')
+            )
+    
+    # Place legends with refined styling
+    legend1 = ax.legend(handles=lang_handles, title='Language', 
+                        loc='upper left', fontsize=10, title_fontsize=11,
+                        framealpha=0.95, edgecolor='#CCCCCC')
+    ax.add_artist(legend1)
+    legend2 = ax.legend(handles=scale_handles, title=scale_label, 
+                        loc='upper right', fontsize=10, title_fontsize=11,
+                        framealpha=0.95, edgecolor='#CCCCCC')
+    
+    # Refined grid
+    ax.grid(True, alpha=0.4, linestyle='-', linewidth=0.5)
+    ax.set_axisbelow(True)
+    
+    # Set reasonable y-axis limits with padding
+    ax.margins(x=0.02)
+    
+    plt.tight_layout()
+    
+    if output_path:
+        plt.savefig(output_path, dpi=200, bbox_inches='tight', facecolor='white')
+        print(f"Saved: {output_path}")
+    
+    plt.close()
+    return fig
+
+
 def plot_combined_width_depth(all_results_width, all_results_depth, languages,
                                widths, depths, lrs, output_path=None):
     """
@@ -630,7 +771,7 @@ def main():
                         choices=['width', 'depth', 'both'],
                         help='Which experiment type to plot')
     parser.add_argument('--languages', type=str, nargs='+', 
-                        default=['eng_latn', 'tha_thai', 'urd_arab', 'amh_ethi', 'vie_latn'],
+                        default=['eng_latn', 'tha_thai', 'urd_arab', 'amh_ethi'],
                         help='Languages to include')
     parser.add_argument('--use_final_loss', action='store_true',
                         help='Use final loss instead of best (minimum) loss. '
@@ -711,6 +852,13 @@ def main():
             output_path=os.path.join(SCRIPT_DIR, 'width_optimal_lr_transfer.png')
         )
         
+        # Unified CompleteP plot - all languages on same axes
+        plot_all_completep_unified(
+            all_results_width, args.languages, WIDTHS, LRS,
+            experiment_type='width',
+            output_path=os.path.join(SCRIPT_DIR, 'width_completep_all_languages.png')
+        )
+        
         print_summary(all_results_width, args.languages, WIDTHS, LRS, 'width')
     
     # Depth scaling plots
@@ -737,6 +885,13 @@ def main():
             all_results_depth, args.languages, DEPTHS, LRS,
             experiment_type='depth',
             output_path=os.path.join(SCRIPT_DIR, 'depth_optimal_lr_transfer.png')
+        )
+        
+        # Unified CompleteP plot - all languages on same axes
+        plot_all_completep_unified(
+            all_results_depth, args.languages, DEPTHS, LRS,
+            experiment_type='depth',
+            output_path=os.path.join(SCRIPT_DIR, 'depth_completep_all_languages.png')
         )
         
         print_summary(all_results_depth, args.languages, DEPTHS, LRS, 'depth')

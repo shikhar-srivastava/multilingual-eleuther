@@ -22,3 +22,4 @@ data/shakespeare_char/*
 *.json
 *.csv
 *.log
+mutransfer_experiments/completep/out/*

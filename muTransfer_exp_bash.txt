@@ -20,10 +20,14 @@ bash launch_completep_tha.sh both out  # GPU 1
 bash launch_completep_urd.sh both out  # GPU 2
 bash launch_completep_amh.sh both out  # GPU 3
 
+bash launch_completep_vie.sh both out 
+
 bash launch_completep_eng.sh width out  # GPU 0
 bash launch_completep_tha.sh width out  # GPU 1
 bash launch_completep_urd.sh width out  # GPU 2
 bash launch_completep_amh.sh width out  # GPU 3
+
+bash launch_completep_vie.sh width out 0
 
 # Vietnamese can use a different GPU if needed
 bash launch_completep_vie.sh both out 1  # Run on GPU 1 instead
