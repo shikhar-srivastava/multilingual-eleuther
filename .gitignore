@@ -23,3 +23,5 @@ data/shakespeare_char/*
 *.csv
 *.log
 mutransfer_experiments/completep/out/*
+--project
+--filter
