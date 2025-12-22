@@ -36,6 +36,34 @@ from utils.enhanced_activation_tracker import create_enhanced_activation_tracker
 from utils.weight_tracker import create_weight_tracker, log_weight_summary
 from utils.byte_consumption_plotter import log_byte_consumption_to_wandb, log_final_byte_summary
 from functools import partial
+import csv
+
+# Simple CSV Logger for training metrics
+class CSVLogger:
+    """Simple CSV logger that writes metrics alongside wandb."""
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.file = None
+        self.writer = None
+        self.fieldnames = None
+        
+    def log(self, metrics):
+        """Log a dictionary of metrics. First call determines column order."""
+        if self.file is None:
+            self.fieldnames = list(metrics.keys())
+            self.file = open(self.filepath, 'w', newline='')
+            self.writer = csv.DictWriter(self.file, fieldnames=self.fieldnames)
+            self.writer.writeheader()
+        
+        # Only write fields that exist in header
+        row = {k: metrics.get(k, '') for k in self.fieldnames}
+        self.writer.writerow(row)
+        self.file.flush()
+    
+    def close(self):
+        if self.file is not None:
+            self.file.close()
+            self.file = None
 
 # # Optional import for bitsandbytes - not currently used in main training loop
 # try:
@@ -823,7 +851,7 @@ def main(args):
 
     # Get vocab size for data validation (will be updated after tokenizer modifications)
     _vocab_size_for_validation = len(tokenizer.get_vocab())
-    
+
     def create_dataset_for_epoch(epoch_num):
         logger.info("Building IntLineIterableDataset for pre-tokenized input")
         ds = IntLineIterableDataset(file_path=tokenized_train_path, block_size=args.max_length,
@@ -1249,6 +1277,13 @@ def main(args):
     update_time = time.time()
     local_step = 0  # when continue_from is used, local_step != global_step
     
+    # Initialize CSV logger for metrics (writes log.csv for plotting)
+    csv_logger = None
+    if global_rank == 0 and args.save_dir:
+        csv_path = os.path.join(args.save_dir, 'log.csv')
+        csv_logger = CSVLogger(csv_path)
+        logger.info(f"CSV logging enabled: {csv_path}")
+    
     ### Begin muP code ###
     # Coordinate check logging setup
     coord_check_dict = None
@@ -1493,6 +1528,15 @@ def main(args):
                 
                 if global_rank == 0:
                     wandb.log(eval_metrics, step=global_step)
+                    # Log to CSV for plotting (format: iter, train/loss, val/loss, lr)
+                    if csv_logger is not None:
+                        csv_metrics = {
+                            "iter": global_step,
+                            "train/loss": loss.item(),
+                            "val/loss": eval_loss,
+                            "lr": optimizer.param_groups[0]["lr"],
+                        }
+                        csv_logger.log(csv_metrics)
                 logger.info(f"Eval loss at step {update_step}: {eval_loss}")
 
             
@@ -1699,6 +1743,11 @@ def main(args):
     if weight_tracker is not None:
         weight_tracker.clear_stored_weights()
         logger.info("Weight tracker cleaned up")
+    
+    # Close CSV logger
+    if csv_logger is not None:
+        csv_logger.close()
+        logger.info(f"CSV log saved to: {os.path.join(args.save_dir, 'log.csv')}")
     
     logger.info("Script finished successfully")
     print(f"Rank {global_rank} finished successfully")
