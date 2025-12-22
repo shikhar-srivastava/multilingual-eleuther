@@ -291,13 +291,23 @@ class IntLineIterableDataset(IterableDataset):
     """
     Iterable dataset that reads pre-tokenized files with space-separated integer token IDs (one example per line),
     mirroring the reference approach. Truncates examples to block_size. Shards by rank across distributed nodes.
+    
+    Args:
+        file_path: Path to the pre-tokenized file
+        block_size: Maximum sequence length (truncate to this)
+        rank: DDP rank for sharding
+        world_size: Total number of DDP processes
+        vocab_size: If provided, validates that all token IDs are < vocab_size. Lines with
+                    out-of-bounds tokens are skipped to prevent CUDA index errors.
     """
-    def __init__(self, file_path: str, block_size: int, rank: int = 0, world_size: int = 1):
+    def __init__(self, file_path: str, block_size: int, rank: int = 0, world_size: int = 1, vocab_size: int = None):
         super().__init__()
         self.file_path = file_path
         self.block_size = block_size
         self.rank = rank
         self.world_size = world_size
+        self.vocab_size = vocab_size
+        self._skipped_lines = 0  # Track skipped lines for debugging
 
     def __iter__(self):
         import itertools
@@ -323,6 +333,18 @@ class IntLineIterableDataset(IterableDataset):
                 except ValueError:
                     # Skip malformed lines
                     continue
+                # Validate token IDs are within vocabulary bounds
+                if self.vocab_size is not None:
+                    max_token = max(token_ids) if token_ids else 0
+                    if max_token >= self.vocab_size:
+                        self._skipped_lines += 1
+                        if self._skipped_lines <= 5:  # Only warn for first few
+                            import warnings
+                            warnings.warn(
+                                f"Skipping line {i+1}: contains token ID {max_token} >= vocab_size {self.vocab_size}. "
+                                f"This may indicate a tokenizer/data mismatch."
+                            )
+                        continue
                 if len(token_ids) > self.block_size:
                     token_ids = token_ids[:self.block_size]
                 yield {"input_ids": torch.tensor(token_ids, dtype=torch.long)}

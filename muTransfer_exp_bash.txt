@@ -32,6 +32,12 @@ bash launch_completep_tha.sh depth out  # GPU 1
 bash launch_completep_urd.sh depth out  # GPU 2
 bash launch_completep_amh.sh depth out  # GPU 3
 
+bash launch_completep_eng.sh depth out 0 4    # depth=4, GPU 0
+bash launch_completep_eng.sh depth out 1 8    # depth=8, GPU 1
+bash launch_completep_eng.sh depth out 2 12   # depth=12, GPU 2
+bash launch_completep_eng.sh depth out 3 16   # depth=16, GPU 3
+
+
 bash launch_completep_vie.sh width out 0
 
 # Vietnamese can use a different GPU if needed

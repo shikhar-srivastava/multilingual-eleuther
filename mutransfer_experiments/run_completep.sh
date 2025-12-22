@@ -5,12 +5,15 @@
 # with dynamically generated model configs.
 #
 # Usage:
-#   bash run_completep.sh [DATASET] [EXPERIMENT_TYPE] [OUT_DIR] [GPU_ID]
+#   bash run_completep.sh [DATASET] [EXPERIMENT_TYPE] [OUT_DIR] [GPU_ID] [SINGLE_VALUE]
 #
 # DATASET: eng_latn | tha_thai | urd_arab | amh_ethi | vie_latn
 # EXPERIMENT_TYPE: width | depth | both
 # OUT_DIR: out | out_test
 # GPU_ID: 0 | 1 | 2 | 3 (default: 0)
+# SINGLE_VALUE: (optional) Run only this specific width/depth value
+#               For width experiments: 128 | 256 | 512 | 768
+#               For depth experiments: 4 | 8 | 12 | 16
 
 set -euo pipefail
 
@@ -24,6 +27,7 @@ DATASET=${1:-eng_latn}
 EXPERIMENT_TYPE=${2:-width}  # width | depth | both
 OUT_BASE=${3:-out}
 GPU_ID=${4:-0}
+SINGLE_VALUE=${5:-}
 
 # Fixed tokenizer settings (8192 vocab for small models)
 TOKENIZER_TYPE="bpe_unscaled"
@@ -72,6 +76,9 @@ echo "Dataset:         $DATASET"
 echo "Tokenizer:       $TOKENIZER_TYPE (vocab=$VOCAB_SIZE)"
 echo "Experiment:      $EXPERIMENT_TYPE"
 echo "GPU:             $GPU_ID"
+if [ -n "$SINGLE_VALUE" ]; then
+    echo "Single Value:    $SINGLE_VALUE (running only this width/depth)"
+fi
 echo "Base Model:      width=$BASE_WIDTH, depth=$BASE_DEPTH (9M proxy)"
 echo "Depth Alpha:     $DEPTH_ALPHA_EXP"
 echo "Output:          $SCRIPT_DIR/completep/$OUT_BASE/"
@@ -187,13 +194,20 @@ run_experiment() {
 
 # Width scaling experiments
 if [[ "$EXPERIMENT_TYPE" == "width" || "$EXPERIMENT_TYPE" == "both" ]]; then
+    # If SINGLE_VALUE is set, only run that width
+    if [ -n "$SINGLE_VALUE" ]; then
+        RUN_WIDTHS="$SINGLE_VALUE"
+    else
+        RUN_WIDTHS="$WIDTHS"
+    fi
+    
     echo ""
     echo "=== Width Scaling (fixed depth=$BASE_DEPTH) ==="
-    echo "Widths: $WIDTHS"
+    echo "Widths: $RUN_WIDTHS"
     echo "Learning rates: $LRS_WIDTH"
     echo ""
     
-    for width in $WIDTHS; do
+    for width in $RUN_WIDTHS; do
         for lr in $LRS_WIDTH; do
             for seed in $SEEDS; do
                 run_experiment $width $BASE_DEPTH $lr $seed "width"
@@ -204,13 +218,20 @@ fi
 
 # Depth scaling experiments
 if [[ "$EXPERIMENT_TYPE" == "depth" || "$EXPERIMENT_TYPE" == "both" ]]; then
+    # If SINGLE_VALUE is set, only run that depth
+    if [ -n "$SINGLE_VALUE" ]; then
+        RUN_DEPTHS="$SINGLE_VALUE"
+    else
+        RUN_DEPTHS="$DEPTHS"
+    fi
+    
     echo ""
     echo "=== Depth Scaling (fixed width=$BASE_WIDTH) ==="
-    echo "Depths: $DEPTHS"
+    echo "Depths: $RUN_DEPTHS"
     echo "Learning rates: $LRS_DEPTH"
     echo ""
     
-    for depth in $DEPTHS; do
+    for depth in $RUN_DEPTHS; do
         for lr in $LRS_DEPTH; do
             for seed in $SEEDS; do
                 run_experiment $BASE_WIDTH $depth $lr $seed "depth"
