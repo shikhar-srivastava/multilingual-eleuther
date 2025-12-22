@@ -344,7 +344,7 @@ class IntLineIterableDataset(IterableDataset):
                                 f"Skipping line {i+1}: contains token ID {max_token} >= vocab_size {self.vocab_size}. "
                                 f"This may indicate a tokenizer/data mismatch."
                             )
-                        continue
+                    continue
                 if len(token_ids) > self.block_size:
                     token_ids = token_ids[:self.block_size]
                 yield {"input_ids": torch.tensor(token_ids, dtype=torch.long)}
