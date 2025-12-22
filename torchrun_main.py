@@ -12,7 +12,7 @@ import torch.utils.data
 import torch.distributed as dist
 
 import transformers
-from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM, PreTrainedTokenizerFast
 from transformers import LlamaForCausalLM as HF_LlamaForCausalLM
 
 ## datasets streaming removed
@@ -735,8 +735,12 @@ def main(args):
         if dist.is_available() and dist.is_initialized():
             dist.barrier()
         load_path = out_dir
-    # Enforce AutoTokenizer load; fail loudly on error
-    tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True)
+    # Load tokenizer - use PreTrainedTokenizerFast for local dirs without config.json
+    # (newer transformers versions require config.json for AutoTokenizer)
+    if os.path.isdir(load_path) and not os.path.isfile(os.path.join(load_path, 'config.json')):
+        tokenizer = PreTrainedTokenizerFast.from_pretrained(load_path, model_max_length=args.max_length)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True)
     
     # Use pre-tokenized ints-per-line
     tokenized_root = "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
