@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 goldfish=${goldfish:-True}
-TRAIN_SCRIPT="/scratch/ssrivas9/multilingual-eleuther/monolingual_130m.sh"
+TRAIN_SCRIPT="/localdisk/ssrivas9/multilingual-eleuther/monolingual_130m.sh"
 if [[ "$goldfish" == "True" ]]; then
-  TRAIN_SCRIPT="/scratch/ssrivas9/multilingual-eleuther/monolingual_130m_gold.sh"
+  TRAIN_SCRIPT="/localdisk/ssrivas9/multilingual-eleuther/monolingual_130m_gold.sh"
 fi
 
 echo "[Config] goldfish=$goldfish, using training script: $TRAIN_SCRIPT"
@@ -23,10 +23,10 @@ tokenize_fn() {
   local dataset=$1
   local tokenizer_type=$2
   local vocab=$3
-  python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+  python /localdisk/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
     --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
     --split train --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True --shuffle True
-  python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+  python /localdisk/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
     --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
     --split eval --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True --shuffle False
 }

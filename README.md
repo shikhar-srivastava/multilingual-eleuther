@@ -13,11 +13,11 @@ A pipeline for training monolingual LLaMA models across different languages, voc
 Before training monolingual models, you need to download the required data:
 
 1. **Monolingual Training Data**: Download the preprocessed monolingual datasets
-   - Expected location: `/scratch/ssrivas9/catherinearnett/monolingual_training_data`
+   - Expected location: `/localdisk/ssrivas9/catherinearnett/monolingual_training_data`
    - Contains text files for: `eng_latn`, `tha_thai`, `urd_arab`, `amh_ethi`, `vie_latn`
 
 2. **Monolingual Tokenizers**: Download the pretrained tokenizers
-   - Expected location: `/scratch/ssrivas9/catherinearnett/monolingual-tokenizers`
+   - Expected location: `/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers`
    - Contains BPE and Unigram tokenizers with various vocabulary sizes
 
 ### Environment Setup
@@ -40,9 +40,9 @@ Create balanced training and evaluation splits based on byte premium (BP) calcul
 # Train Split: Take 1 GB * Byte Premium of each monolingual dataset 
 # Eval Split: Take last 8,000 lines of each monolingual dataset
 
-python /scratch/ssrivas9/multilingual-eleuther/scripts/create_bp_splits.py \
-  --input_root /scratch/ssrivas9/catherinearnett/monolingual_training_data \
-  --output_root /scratch/ssrivas9/catherinearnett/monolingual_training_data_bp
+python /localdisk/ssrivas9/multilingual-eleuther/scripts/create_bp_splits.py \
+  --input_root /localdisk/ssrivas9/catherinearnett/monolingual_training_data \
+  --output_root /localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp
 ```
 
 This creates balanced datasets with the following byte premiums:
@@ -92,14 +92,14 @@ Each monolingual training script:
 
 Example tokenization command (executed automatically):
 ```bash
-python /scratch/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+python /localdisk/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
   --dataset "eng_latn" --tokenizer_type "bpe_unscaled" --tokenizer_vocabulary "32768" \
   --split train --max_seq_len 1024 --max_segments -1 --prepend_cls True --include_sep True --shuffle True
 ```
 
 Example training command (executed automatically):
 ```bash
-bash /scratch/ssrivas9/multilingual-eleuther/monolingual_130m.sh pre "eng_latn" "32768" "bpe_unscaled" 6 29510
+bash /localdisk/ssrivas9/multilingual-eleuther/monolingual_130m.sh pre "eng_latn" "32768" "bpe_unscaled" 6 29510
 ```
 
 ### Direct Model Training
