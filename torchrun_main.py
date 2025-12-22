@@ -530,8 +530,9 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
     if not os.path.isfile(eval_path):
         raise FileNotFoundError(f"Pre-tokenized eval not found: {eval_path}")
 
+    vocab_size = len(tokenizer.get_vocab())
     ds = IntLineIterableDataset(file_path=eval_path, block_size=args.max_length,
-                                rank=global_rank, world_size=world_size)
+                                rank=global_rank, world_size=world_size, vocab_size=vocab_size)
     collate = build_intline_collate_fn(tokenizer.pad_token_id, args.max_length)
     eval_dataloader = torch.utils.data.DataLoader(ds, batch_size=batch_size, num_workers=1,
                                                  pin_memory=True, collate_fn=collate)
@@ -820,10 +821,13 @@ def main(args):
     if global_rank == 0:
         wandb.log({"dataset_size": dataset_size}, step=0)
 
+    # Get vocab size for data validation (will be updated after tokenizer modifications)
+    _vocab_size_for_validation = len(tokenizer.get_vocab())
+    
     def create_dataset_for_epoch(epoch_num):
         logger.info("Building IntLineIterableDataset for pre-tokenized input")
         ds = IntLineIterableDataset(file_path=tokenized_train_path, block_size=args.max_length,
-                                    rank=global_rank, world_size=world_size)
+                                    rank=global_rank, world_size=world_size, vocab_size=_vocab_size_for_validation)
         return ds
 
     # Initial dataset creation for epoch 1
@@ -1273,11 +1277,10 @@ def main(args):
         # Reshuffle dataset for this epoch (except epoch 1 which was already created)
         if epoch > 1:
             logger.info(f"Reshuffling dataset for epoch {epoch}")
-            data = create_dataset_for_epoch(epoch)
             
             # Recreate dataset and dataloader with new shuffled data
-            dataset = IntLineIterableDataset(file_path=tokenized_train_path, block_size=args.max_length,
-                                    rank=global_rank, world_size=world_size)
+            # Use create_dataset_for_epoch which includes vocab_size validation
+            dataset = create_dataset_for_epoch(epoch)
             collate = build_intline_collate_fn(tokenizer.pad_token_id, args.max_length)
             _dl_kwargs = dict(batch_size=args.batch_size, num_workers=args.workers, pin_memory=True, collate_fn=collate)
             if args.workers > 0:
