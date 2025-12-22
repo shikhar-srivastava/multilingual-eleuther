@@ -60,7 +60,7 @@ def parse_run_name(run_name):
     }
 
 
-def export_run_to_csv(run, base_dir):
+def export_run_to_csv(run, base_dir, skip_existing=True):
     """Export a single run's metrics to CSV."""
     
     run_name = run.name
@@ -86,33 +86,73 @@ def export_run_to_csv(run, base_dir):
     
     csv_path = os.path.join(out_dir, 'log.csv')
     
-    # Check if already exported
-    if os.path.exists(csv_path):
-        print(f"  [SKIP] Already exists: {csv_path}")
-        return True
+    # Check if already exported (if skip_existing is enabled)
+    if skip_existing and os.path.exists(csv_path):
+        # Verify file is not empty
+        if os.path.getsize(csv_path) > 0:
+            print(f"  [SKIP] Already exists: {csv_path}")
+            return 'skipped'
     
-    # Download metrics
+    # Download metrics with error handling
     try:
-        history = run.history(keys=['loss', 'eval_loss', 'lr', '_step'])
+        # Use samples parameter to limit data size if needed
+        # Download in chunks if the run is very large
+        try:
+            history = run.history(keys=['loss', 'eval_loss', 'lr', '_step'], samples=50000)
+        except Exception:
+            # Fallback: try without samples limit
+            history = run.history(keys=['loss', 'eval_loss', 'lr', '_step'])
         
-        if history.empty:
+        if history is None or history.empty:
             print(f"  [WARN] No history data for: {run_name}")
             return False
         
         # Rename columns to match expected format
-        df = history.rename(columns={
-            'loss': 'train/loss',
-            'eval_loss': 'val/loss',
-            '_step': 'iter'
-        })
+        # Handle missing columns gracefully
+        rename_map = {}
+        if 'loss' in history.columns:
+            rename_map['loss'] = 'train/loss'
+        if 'eval_loss' in history.columns:
+            rename_map['eval_loss'] = 'val/loss'
+        if '_step' in history.columns:
+            rename_map['_step'] = 'iter'
+        
+        if rename_map:
+            df = history.rename(columns=rename_map)
+        else:
+            df = history.copy()
+        
+        # Ensure we have at least 'iter' column
+        if 'iter' not in df.columns and '_step' in history.columns:
+            df['iter'] = history['_step']
+        elif 'iter' not in df.columns:
+            # Create iter from index if _step not available
+            df['iter'] = df.index
+        
+        # Reorder columns: iter, train/loss, val/loss, lr
+        cols = ['iter']
+        if 'train/loss' in df.columns:
+            cols.append('train/loss')
+        if 'val/loss' in df.columns:
+            cols.append('val/loss')
+        if 'lr' in df.columns:
+            cols.append('lr')
+        
+        df = df[cols]
         
         # Save to CSV
         df.to_csv(csv_path, index=False)
-        print(f"  [OK] Exported: {csv_path}")
+        print(f"  [OK] Exported {len(df)} rows: {csv_path}")
         return True
         
+    except MemoryError as e:
+        print(f"  [ERROR] Memory error exporting {run_name}: {e}")
+        print(f"  [HINT] Run may be too large. Try exporting individual runs.")
+        return False
     except Exception as e:
         print(f"  [ERROR] Failed to export {run_name}: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -126,6 +166,10 @@ def main():
                         help='Output directory (default: script directory)')
     parser.add_argument('--entity', type=str, default=None,
                         help='wandb entity (default: from project string)')
+    parser.add_argument('--limit', type=int, default=None,
+                        help='Limit number of runs to process (for testing)')
+    parser.add_argument('--skip_existing', action='store_true', default=True,
+                        help='Skip runs that already have log.csv files (default: True)')
     args = parser.parse_args()
     
     base_dir = args.out_dir or SCRIPT_DIR
@@ -146,30 +190,66 @@ def main():
     print()
     
     # Initialize wandb API
-    api = wandb.Api()
+    try:
+        api = wandb.Api(timeout=60)  # Increase timeout for large queries
+    except Exception as e:
+        print(f"Error initializing wandb API: {e}")
+        print("Make sure you're logged in: wandb login")
+        return
     
     # Convert filter to regex
     filter_regex = args.filter.replace('*', '.*')
     
-    # Query runs
+    # Query runs with pagination to avoid memory issues
     print("Querying runs...")
+    matching_runs = []
     try:
         if entity:
-            runs = api.runs(f"{entity}/{project}")
+            project_path = f"{entity}/{project}"
         else:
-            runs = api.runs(project)
+            project_path = project
+        
+        # Use pagination to avoid loading all runs at once
+        # Process in batches to prevent memory issues
+        page_size = 50
+        offset = 0
+        
+        while True:
+            try:
+                runs = api.runs(project_path, per_page=page_size, offset=offset)
+                batch = list(runs)
+                
+                if not batch:
+                    break
+                
+                # Filter runs in this batch
+                for run in batch:
+                    try:
+                        if re.match(filter_regex, run.name):
+                            matching_runs.append(run.id)  # Store ID instead of full run object
+                    except Exception as e:
+                        print(f"  [WARN] Error processing run {run.name}: {e}")
+                        continue
+                
+                print(f"  Processed {offset + len(batch)} runs, found {len(matching_runs)} matching...")
+                
+                if len(batch) < page_size:
+                    break
+                
+                offset += page_size
+                
+            except Exception as e:
+                print(f"  [WARN] Error fetching batch at offset {offset}: {e}")
+                break
+        
     except Exception as e:
         print(f"Error querying wandb: {e}")
         print("Make sure you're logged in: wandb login")
+        import traceback
+        traceback.print_exc()
         return
     
-    # Filter runs
-    matching_runs = []
-    for run in runs:
-        if re.match(filter_regex, run.name):
-            matching_runs.append(run)
-    
-    print(f"Found {len(matching_runs)} matching runs")
+    print(f"\nFound {len(matching_runs)} matching runs")
     print()
     
     if not matching_runs:
@@ -177,19 +257,45 @@ def main():
         print("Check your project name and filter pattern.")
         return
     
-    # Export each run
+    # Apply limit if specified
+    if args.limit:
+        matching_runs = matching_runs[:args.limit]
+        print(f"Limited to {len(matching_runs)} runs (--limit={args.limit})")
+        print()
+    
+    # Export each run (load one at a time to avoid memory issues)
     success = 0
     failed = 0
     skipped = 0
     
-    for run in matching_runs:
-        result = export_run_to_csv(run, base_dir)
-        if result is True:
-            success += 1
-        elif result is False:
+    for idx, run_id in enumerate(matching_runs, 1):
+        try:
+            # Load run one at a time
+            run = api.run(f"{project_path}/{run_id}")
+            print(f"[{idx}/{len(matching_runs)}] Processing: {run.name}")
+            
+            result = export_run_to_csv(run, base_dir, skip_existing=args.skip_existing)
+            if result is True:
+                success += 1
+            elif result == 'skipped':
+                skipped += 1
+            else:
+                failed += 1
+            
+            # Force garbage collection periodically
+            if idx % 10 == 0:
+                import gc
+                gc.collect()
+                
+        except KeyboardInterrupt:
+            print("\n\nInterrupted by user. Exiting...")
+            break
+        except Exception as e:
+            print(f"  [ERROR] Failed to process run {run_id}: {e}")
             failed += 1
-        else:
-            skipped += 1
+            import traceback
+            traceback.print_exc()
+            continue
     
     print()
     print("=" * 70)
