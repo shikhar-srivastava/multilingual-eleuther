@@ -41,7 +41,8 @@ WIDTHS="128 256 512 768"
 DEPTHS="4 8 12 16"
 
 # Learning rates to sweep
-LRS="0.1 0.05 0.02 0.01 0.005 0.002 0.001 0.0005 0.0002 0.0001"
+LRS_WIDTH="0.1 0.05 0.02 0.01 0.005 0.002 0.001 0.0005 0.0002 0.0001"
+LRS_DEPTH="0.05 0.02 0.01 0.005 0.002 0.001"  # 6 LRs sufficient for depth
 
 # Seeds for multiple runs
 SEEDS="1 2 3"
@@ -189,11 +190,11 @@ if [[ "$EXPERIMENT_TYPE" == "width" || "$EXPERIMENT_TYPE" == "both" ]]; then
     echo ""
     echo "=== Width Scaling (fixed depth=$BASE_DEPTH) ==="
     echo "Widths: $WIDTHS"
-    echo "Learning rates: $LRS"
+    echo "Learning rates: $LRS_WIDTH"
     echo ""
     
     for width in $WIDTHS; do
-        for lr in $LRS; do
+        for lr in $LRS_WIDTH; do
             for seed in $SEEDS; do
                 run_experiment $width $BASE_DEPTH $lr $seed "width"
             done
@@ -206,11 +207,11 @@ if [[ "$EXPERIMENT_TYPE" == "depth" || "$EXPERIMENT_TYPE" == "both" ]]; then
     echo ""
     echo "=== Depth Scaling (fixed width=$BASE_WIDTH) ==="
     echo "Depths: $DEPTHS"
-    echo "Learning rates: $LRS"
+    echo "Learning rates: $LRS_DEPTH"
     echo ""
     
     for depth in $DEPTHS; do
-        for lr in $LRS; do
+        for lr in $LRS_DEPTH; do
             for seed in $SEEDS; do
                 run_experiment $BASE_WIDTH $depth $lr $seed "depth"
             done
