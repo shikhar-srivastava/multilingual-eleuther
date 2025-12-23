@@ -28,6 +28,7 @@ EXPERIMENT_TYPE=${2:-width}  # width | depth | both
 OUT_BASE=${3:-out}
 GPU_ID=${4:-0}
 SINGLE_VALUE=${5:-}
+ENABLE_HF_UPLOAD=${ENABLE_HF_UPLOAD:-false}
 
 # Fixed tokenizer settings (8192 vocab for small models)
 TOKENIZER_TYPE="bpe_unscaled"
@@ -137,13 +138,23 @@ run_experiment() {
     # Proper naming: muP_9M-base_<scale_type>-scaling_<lang>_w<W>_d<D>_lr<LR>_s<seed>_completep
     local run_name="muP_9M-base_${scale_type}-scaling_${DATASET}_w${width}_d${depth}_lr${lr}_s${seed}_completep"
     local out_dir="$SCRIPT_DIR/completep/$OUT_BASE/${DATASET}/width${width}_depth${depth}_seed${seed}_lr${lr}"
-    mkdir -p "$out_dir"
-    
+    local hf_flags=()
+    if [ "${ENABLE_HF_UPLOAD}" = "true" ]; then
+        hf_flags=(--hf_repo_name "${HF_USERNAME}/${run_name}" --hf_push_final)
+    fi
+
     # Skip if already completed
     if [ -f "$out_dir/final_model/config.json" ]; then
         echo "  [SKIP] Already completed: $run_name"
         return 0
     fi
+
+    # Clean any partial run to restart from scratch
+    if [ -d "$out_dir" ]; then
+        echo "  [RESET] Incomplete run found. Removing $out_dir to restart from scratch."
+        rm -rf "$out_dir"
+    fi
+    mkdir -p "$out_dir"
     
     local config_path=$(create_config $width $depth)
     
@@ -183,8 +194,8 @@ run_experiment() {
         --depth_multiplier=$depth_multiplier \
         --depth_base_depth=$BASE_DEPTH \
         --depth_alpha_exp=$DEPTH_ALPHA_EXP \
-        --hf_repo_name="${HF_USERNAME}/${run_name}" \
-        --hf_push_final 2>&1 | tee "$out_dir/train.log" | tail -n 5
+        --disable_hf_upload \
+        "${hf_flags[@]}" 2>&1 | tee "$out_dir/train.log" | tail -n 5
     
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then

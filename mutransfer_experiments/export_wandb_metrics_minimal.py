@@ -113,6 +113,10 @@ def main():
                         help='Limit number of runs')
     parser.add_argument('--use_cli', action='store_true',
                         help='Use wandb CLI instead of API (slower but more stable)')
+    parser.add_argument('--list', action='store_true',
+                        help='List all runs matching filter (don\'t export)')
+    parser.add_argument('--show_all', action='store_true',
+                        help='Show all runs (ignore filter) to see naming patterns')
     args = parser.parse_args()
     
     base_dir = args.out_dir or SCRIPT_DIR
@@ -162,32 +166,58 @@ def main():
     print("\nQuerying runs (minimal query)...")
     try:
         # Use a very small page size
-        runs_iter = api.runs(project_path, per_page=10)
+        runs_iter = api.runs(project_path, per_page=50)
         
-        # Get just the first few to test
+        # Get runs to test
         matching_runs = []
+        all_runs = []
         count = 0
         filter_regex = args.filter.replace('*', '.*')
         
+        print(f"Filter regex: {filter_regex}")
+        print("Scanning runs...\n")
+        
         for run in runs_iter:
             count += 1
-            if count > 100:  # Safety limit
+            if count > 500:  # Increased limit
                 break
-                
+            
             try:
-                if re.match(filter_regex, run.name):
-                    matching_runs.append({
-                        'id': run.id,
-                        'name': run.name
-                    })
-                    print(f"  Found: {run.name}")
+                run_info = {
+                    'id': run.id,
+                    'name': run.name
+                }
+                all_runs.append(run_info)
+                
+                # Check if matches filter
+                if args.show_all or re.match(filter_regex, run.name):
+                    if args.show_all:
+                        # Show all runs with indication of match
+                        matches = "✓" if re.match(filter_regex, run.name) else " "
+                        print(f"  {matches} {run.name}")
+                    else:
+                        matching_runs.append(run_info)
+                        print(f"  Found: {run.name}")
                     
-                    if args.limit and len(matching_runs) >= args.limit:
+                    if args.limit and len(matching_runs) >= args.limit and not args.show_all:
                         break
-            except:
+            except Exception as e:
+                print(f"  Error processing run: {e}")
                 continue
         
-        print(f"\nFound {len(matching_runs)} matching runs")
+        if args.show_all:
+            print(f"\nScanned {count} runs total")
+            matching_count = sum(1 for r in all_runs if re.match(filter_regex, r['name']))
+            print(f"Found {matching_count} runs matching filter: {args.filter}")
+            return
+        
+        print(f"\nFound {len(matching_runs)} matching runs (scanned {count} total)")
+        
+        if args.list:
+            print("\nMatching runs:")
+            for run_info in matching_runs:
+                print(f"  - {run_info['name']} (ID: {run_info['id']})")
+            return
         
     except Exception as e:
         print(f"✗ Query failed: {e}")

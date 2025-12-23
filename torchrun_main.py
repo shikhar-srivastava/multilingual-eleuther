@@ -476,6 +476,8 @@ def parse_args(args):
                         help="If set, push the final model to HuggingFace Hub")
     parser.add_argument("--hf_push_checkpoints", action="store_true",
                         help="If set, push periodic checkpoints to HuggingFace Hub during training")
+    parser.add_argument("--disable_hf_upload", action="store_true",
+                        help="Disable all HuggingFace uploads (overrides --hf_push_final/--hf_push_checkpoints)")
 
     # Back-compat no-op flags (accepted but unused)
     parser.add_argument("--track_dataset_bytes", action="store_true",
@@ -659,6 +661,11 @@ def main(args):
     # Log HuggingFace Hub availability
     if not HF_HUB_AVAILABLE:
         logger.warning("huggingface_hub not available. HuggingFace Hub integration disabled.")
+    if args.disable_hf_upload:
+        if args.hf_push_final or args.hf_push_checkpoints:
+            logger.info("disable_hf_upload flag set; all HuggingFace uploads will be skipped.")
+        args.hf_push_final = False
+        args.hf_push_checkpoints = False
     
     logger.info("*" * 40)
     logger.info(f"Starting training with the arguments")
@@ -1284,6 +1291,9 @@ def main(args):
         csv_logger = CSVLogger(csv_path)
         logger.info(f"CSV logging enabled: {csv_path}")
     
+    # Track last loss to allow safe cleanup even if no steps were run
+    loss = None
+    
     ### Begin muP code ###
     # Coordinate check logging setup
     coord_check_dict = None
@@ -1461,7 +1471,7 @@ def main(args):
                 model_to_save.save_pretrained(current_model_directory, max_shard_size='100GB')
 
                 # Push to HuggingFace Hub if requested
-                if args.hf_push_checkpoints and args.hf_repo_name:
+                if args.hf_push_checkpoints and args.hf_repo_name and not args.disable_hf_upload:
                     revision_name = f"checkpoint-{checkpoint_name}"
                     commit_msg = (
                         f"Checkpoint at epoch {current_epoch}, step {epoch_update_step} (global update step {update_step})"
@@ -1684,7 +1694,7 @@ def main(args):
         model_to_save.save_pretrained(final_model_directory)
         
         # Push final model to HuggingFace Hub if requested
-        if args.hf_push_final and args.hf_repo_name:
+        if args.hf_push_final and args.hf_repo_name and not args.disable_hf_upload:
             logger.info(f"Pushing final model to HuggingFace Hub: {args.hf_repo_name}")
             success = push_to_huggingface_hub(
                 model_dir=final_model_directory,
@@ -1710,7 +1720,19 @@ def main(args):
     # Final evaluation
     logger.info("Running final evaluation")
     model.eval()
-    del loss, optimizer, scheduler
+    # Free training-time tensors before eval; guards avoid NameError if training skipped
+    try:
+        del loss
+    except NameError:
+        pass
+    try:
+        del optimizer
+    except NameError:
+        pass
+    try:
+        del scheduler
+    except NameError:
+        pass
     import gc; gc.collect()
     torch.cuda.empty_cache()
 
