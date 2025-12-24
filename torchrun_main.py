@@ -560,7 +560,7 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
     if not os.path.isfile(eval_path):
         raise FileNotFoundError(f"Pre-tokenized eval not found: {eval_path}")
 
-    vocab_size = len(tokenizer.get_vocab())
+    vocab_size = len(tokenizer)  # Use len(tokenizer) to include added special tokens
     ds = IntLineIterableDataset(file_path=eval_path, block_size=args.max_length,
                                 rank=global_rank, world_size=world_size, vocab_size=vocab_size)
     collate = build_intline_collate_fn(tokenizer.pad_token_id, args.max_length)
@@ -771,12 +771,9 @@ def main(args):
         if dist.is_available() and dist.is_initialized():
             dist.barrier()
         load_path = out_dir
-    # Load tokenizer - use PreTrainedTokenizerFast for local dirs without config.json
-    # (newer transformers versions require config.json for AutoTokenizer)
-    if os.path.isdir(load_path) and not os.path.isfile(os.path.join(load_path, 'config.json')):
-        tokenizer = PreTrainedTokenizerFast.from_pretrained(load_path, model_max_length=args.max_length)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True)
+    # Load tokenizer - always use AutoTokenizer for consistency with tokenize_and_pack.py
+    # AutoTokenizer may auto-add special tokens (BOS, EOS, PAD) that are in the pre-tokenized data
+    tokenizer = AutoTokenizer.from_pretrained(load_path, model_max_length=args.max_length, use_fast=True, trust_remote_code=True)
     
     # Use pre-tokenized ints-per-line
     tokenized_root = "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
@@ -856,8 +853,9 @@ def main(args):
     if global_rank == 0:
         wandb.log({"dataset_size": dataset_size}, step=0)
 
-    # Get vocab size for data validation (will be updated after tokenizer modifications)
-    _vocab_size_for_validation = len(tokenizer.get_vocab())
+    # Get vocab size for data validation - use len(tokenizer) to include all tokens
+    # (added special tokens like BOS/EOS may have IDs >= base vocab_size)
+    _vocab_size_for_validation = len(tokenizer)
 
     def create_dataset_for_epoch(epoch_num):
         logger.info("Building IntLineIterableDataset for pre-tokenized input")
@@ -974,7 +972,8 @@ def main(args):
         model = LlamaForCausalLM(model_config)
     
     # Always resize model embeddings to tokenizer vocab (tokenizer is authoritative)
-    vocab_size = len(tokenizer.get_vocab())
+    # Use len(tokenizer) to include all tokens (base vocab + added special tokens like BOS/EOS)
+    vocab_size = len(tokenizer)
     if getattr(model_config, 'vocab_size', None) != vocab_size:
         logger.info(f"Resizing model embeddings from {getattr(model_config, 'vocab_size', 'N/A')} to {vocab_size}")
         model.resize_token_embeddings(vocab_size)
@@ -1462,9 +1461,9 @@ def main(args):
                 model_to_save = model.module if hasattr(model, 'module') else model
                 if hasattr(model_to_save, 'config'):
                     model_to_save.config.pad_token_id = tokenizer.pad_token_id
-                    model_to_save.config.vocab_size = len(tokenizer.get_vocab())
+                    model_to_save.config.vocab_size = len(tokenizer)
                     logger.info(
-                        f"Updated model config: pad_token_id={tokenizer.pad_token_id}, vocab_size={len(tokenizer.get_vocab())}"
+                        f"Updated model config: pad_token_id={tokenizer.pad_token_id}, vocab_size={len(tokenizer)}"
                     )
 
                 os.makedirs(args.save_dir, exist_ok=True)
@@ -1638,7 +1637,7 @@ def main(args):
                     model_to_save = model.module if hasattr(model, 'module') else model
                     if hasattr(model_to_save, 'config'):
                         model_to_save.config.pad_token_id = tokenizer.pad_token_id
-                        model_to_save.config.vocab_size = len(tokenizer.get_vocab())
+                        model_to_save.config.vocab_size = len(tokenizer)
                     
                     os.makedirs(args.save_dir, exist_ok=True)
                     model_to_save.save_pretrained(current_model_directory, max_shard_size='100GB')
@@ -1687,8 +1686,8 @@ def main(args):
         model_to_save = model.module if hasattr(model, 'module') else model
         if hasattr(model_to_save, 'config'):
             model_to_save.config.pad_token_id = tokenizer.pad_token_id
-            model_to_save.config.vocab_size = len(tokenizer.get_vocab())
-            logger.info(f"Final save - Updated model config: pad_token_id={tokenizer.pad_token_id}, vocab_size={len(tokenizer.get_vocab())}")
+            model_to_save.config.vocab_size = len(tokenizer)
+            logger.info(f"Final save - Updated model config: pad_token_id={tokenizer.pad_token_id}, vocab_size={len(tokenizer)}")
         
         os.makedirs(args.save_dir, exist_ok=True)
         model_to_save.save_pretrained(final_model_directory)
