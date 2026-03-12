@@ -338,13 +338,13 @@ class IntLineIterableDataset(IterableDataset):
                     max_token = max(token_ids) if token_ids else 0
                     if max_token >= self.vocab_size:
                         self._skipped_lines += 1
-                        if self._skipped_lines <= 5:  # Only warn for first few
+                        if self._skipped_lines <= 5:
                             import warnings
                             warnings.warn(
                                 f"Skipping line {i+1}: contains token ID {max_token} >= vocab_size {self.vocab_size}. "
                                 f"This may indicate a tokenizer/data mismatch."
                             )
-                    continue
+                        continue
                 if len(token_ids) > self.block_size:
                     token_ids = token_ids[:self.block_size]
                 yield {"input_ids": torch.tensor(token_ids, dtype=torch.long)}
