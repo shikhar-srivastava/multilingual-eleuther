@@ -27,7 +27,7 @@ echo "Training 350M with lr=$learning_rates, norm=$norm_type, dataset=$monolingu
 CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node 4 --master_port=$MASTER_PORT torchrun_main.py \
     --model_config configs/llama_350m.json \
     --lr $learning_rates \
-    --batch_size 32 \
+    --batch_size 64 \
     --total_batch_size 512 \
     --num_epochs 1 \
     --warmup_steps_ratio 0.1 \
@@ -35,7 +35,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node 4 --master_port=$MASTER_P
     --dtype bfloat16 \
     --eval_every 50 \
     --optimizer adam \
-    --grad_clipping 1.0 \
+    --grad_clipping 2.0 \
     --max_length 1024 \
     --run_name "$run_name" \
     --save_dir "$save_dir" \
