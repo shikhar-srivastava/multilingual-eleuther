@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Usage:
-#   bash monolingual_350m.sh <norm_type> <monolingual_dataset> <vocab_size> <tokenizer_type> [post_num] [master_port]
+#   bash monolingual_350m_8gpu.sh <norm_type> <monolingual_dataset> <vocab_size> <tokenizer_type> [post_num] [master_port]
 # Example:
-#   bash monolingual_350m.sh pre fineweb_eng 32768 bpe_unscaled 6 29510
+#   bash monolingual_350m_8gpu.sh pre fineweb_eng 32768 bpe_unscaled 6 29510
 
 norm_type=${1:-pre}
 monolingual_dataset=${2:-fineweb_eng}
@@ -22,9 +22,9 @@ export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=300
 run_name="mono_350m_${norm_type}_lr${learning_rates}_${monolingual_dataset}_${tokenizer_type}_${vocab_size}"
 save_dir="$run_name"
 
-echo "Training 350M with lr=$learning_rates, norm=$norm_type, dataset=$monolingual_dataset, tok=${tokenizer_type}/${vocab_size} on 4 GPUs"
+echo "Training 350M with lr=$learning_rates, norm=$norm_type, dataset=$monolingual_dataset, tok=${tokenizer_type}/${vocab_size} on 8 GPUs"
 
-CUDA_VISIBLE_DEVICES=4,5,6,7 torchrun --nproc_per_node 4 --master_port=$MASTER_PORT torchrun_main.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node 8 --master_port=$MASTER_PORT torchrun_main.py \
     --model_config configs/llama_350m.json \
     --lr $learning_rates \
     --batch_size 16 \
