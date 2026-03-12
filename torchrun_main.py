@@ -465,9 +465,9 @@ def parse_args(args):
     
     # Monolingual dataset selection
     parser.add_argument("--monolingual-dataset", type=str, required=True,
-                        choices=["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn"],
-                        help="Monolingual dataset to use for training. Must be one of: eng_latn, tha_thai, urd_arab, amh_ethi, vie_latn. "
-                             "Files are expected at /localdisk/ssrivas9/catherinearnett/monolingual_training_data/")
+                        choices=["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn", "fineweb_eng"],
+                        help="Monolingual dataset to use for training. "
+                             "fineweb_eng uses eng_latn tokenizers with FineWeb data.")
     
     # Hugging Face Hub integration flags
     parser.add_argument("--hf_repo_name", type=str, default=None,
@@ -549,9 +549,11 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
             "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
         }
         tok_root = tok_root_map[args.tokenizer_type]
-        tok_file = (f"bpe_{monolingual_dataset}_{args.tokenizer_vocabulary}_300mb_unscaled.json"
+        _eval_tok_ds_map = {"fineweb_eng": "eng_latn"}
+        _eval_tok_ds = _eval_tok_ds_map.get(monolingual_dataset, monolingual_dataset)
+        tok_file = (f"bpe_{_eval_tok_ds}_{args.tokenizer_vocabulary}_300mb_unscaled.json"
                     if args.tokenizer_type == "bpe_unscaled"
-                    else f"unigram_{monolingual_dataset}_{args.tokenizer_vocabulary}_300mb_unscaled.json")
+                    else f"unigram_{_eval_tok_ds}_{args.tokenizer_vocabulary}_300mb_unscaled.json")
         tok_path = os.path.join(tok_root, tok_file)
         tokenizer_basename = os.path.splitext(os.path.basename(tok_path))[0]
     assert monolingual_dataset in bp_index, "Dataset missing in BP index for eval"
@@ -690,11 +692,13 @@ def main(args):
         "bpe_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
         "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
     }
+    _tok_dataset_map = {"fineweb_eng": "eng_latn"}
     if args.tokenizer_type in tok_root_map:
         tok_root = tok_root_map[args.tokenizer_type]
-        tok_file = (f"bpe_{args.monolingual_dataset}_{args.tokenizer_vocabulary}_300mb_unscaled.json"
+        _tok_ds = _tok_dataset_map.get(args.monolingual_dataset, args.monolingual_dataset)
+        tok_file = (f"bpe_{_tok_ds}_{args.tokenizer_vocabulary}_300mb_unscaled.json"
                     if args.tokenizer_type == "bpe_unscaled"
-                    else f"unigram_{args.monolingual_dataset}_{args.tokenizer_vocabulary}_300mb_unscaled.json")
+                    else f"unigram_{_tok_ds}_{args.tokenizer_vocabulary}_300mb_unscaled.json")
         candidate = os.path.join(tok_root, tok_file)
         if os.path.isfile(candidate):
             resolved_tokenizer_name = candidate

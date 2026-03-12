@@ -33,5 +33,12 @@
     "train_bytes": 1449551462,
     "eval_lines": 10800,
     "eval_path": "/localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp/vie_latn_1.35_eval.txt"
+  },
+  "fineweb_eng": {
+    "byte_premium": 1.0,
+    "train_path": "/scratch/ssrivas9/catherinearnett/monolingual_training_data/fineweb_eng.txt",
+    "train_bytes": -1,
+    "eval_lines": 8000,
+    "eval_path": ""
   }
 }

@@ -22,20 +22,25 @@ from transformers import AutoTokenizer, AlbertTokenizer
 
 
 VALID_VOCABS = {8192, 16384, 32768, 49152, 65536, 81920, 98304, 114688, 262144}
-DATASETS = ["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn"]
+DATASETS = ["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn", "fineweb_eng"]
 
 TOKENIZER_ROOTS = {
     "bpe_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/bpe_unscaled_tokenizers",
     "unigram_unscaled": "/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/unigram_unscaled_tokenizers",
 }
 
+TOKENIZER_DATASET_MAP = {
+    "fineweb_eng": "eng_latn",
+}
+
 
 def build_tokenizer_path(dataset: str, tokenizer_type: str, vocab: int) -> str:
+    tok_dataset = TOKENIZER_DATASET_MAP.get(dataset, dataset)
     root = TOKENIZER_ROOTS[tokenizer_type]
     if tokenizer_type == "bpe_unscaled":
-        fname = f"bpe_{dataset}_{vocab}_300mb_unscaled.json"
+        fname = f"bpe_{tok_dataset}_{vocab}_300mb_unscaled.json"
     else:
-        fname = f"unigram_{dataset}_{vocab}_300mb_unscaled.json"
+        fname = f"unigram_{tok_dataset}_{vocab}_300mb_unscaled.json"
     return os.path.join(root, fname)
 
 
@@ -95,6 +100,8 @@ def prepare_tokenizer_dir(json_path: str) -> str:
 def tokenize_file(input_path: str, output_path: str, tokenizer, max_seq_len: int,
                   max_examples: int, max_segments: int,
                   prepend_cls: bool, include_sep: bool) -> None:
+    from tqdm import tqdm
+
     print(f"Tokenizing file: {input_path}")
     cls_token_id: Optional[int] = tokenizer.cls_token_id if prepend_cls else None
     sep_token_id: Optional[int] = tokenizer.sep_token_id if include_sep else None
@@ -108,11 +115,14 @@ def tokenize_file(input_path: str, output_path: str, tokenizer, max_seq_len: int
         print(f"File already exists: {output_path}")
         return
 
+    file_size = os.path.getsize(input_path)
+
     infile = codecs.open(input_path, "rb", encoding="utf-8", errors="replace")
     outfile = codecs.open(output_path, "wb", encoding="utf-8")
     example_count = 0
     line_count = 0
     stored_lines: List[str] = []
+    pbar = tqdm(total=file_size, unit="B", unit_scale=True, desc="Tokenizing")
 
     def tokenize_batch() -> bool:
         nonlocal stored_lines, example_count
@@ -132,26 +142,28 @@ def tokenize_file(input_path: str, output_path: str, tokenizer, max_seq_len: int
                 curr_n_segments = 0
                 example_count += 1
                 if example_count >= max_examples:
-                    print("Finished tokenization.")
                     return True
         stored_lines = []
         return False
 
     for line in infile:
         line_count += 1
+        line_bytes = len(line.encode("utf-8", errors="replace"))
+        pbar.update(line_bytes)
         s = line.strip()
         if s != "":
             stored_lines.append(s)
         if line_count % MAX_STORED_LINE_COUNT == 0:
+            pbar.set_postfix(lines=f"{line_count:,}", examples=f"{example_count:,}")
             completed = tokenize_batch()
-            print(f"Processed up to line {line_count} ({example_count} examples)")
             if completed:
                 break
     if len(stored_lines) > 0:
         tokenize_batch()
+    pbar.close()
     outfile.close()
     infile.close()
-    print(f"Finished tokenization: {example_count} examples.")
+    print(f"Finished tokenization: {example_count:,} examples.")
 
 
 def main() -> None:
