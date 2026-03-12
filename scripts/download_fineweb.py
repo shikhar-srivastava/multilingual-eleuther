@@ -17,14 +17,19 @@ Usage:
 import argparse
 import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.local_config import get_data_root
 
 
 def main() -> None:
+    _data_root = get_data_root()
     parser = argparse.ArgumentParser(description="Download FineWeb sample-10BT to a flat text file")
     parser.add_argument(
         "--output",
         type=str,
-        default="/scratch/ssrivas9/catherinearnett/monolingual_training_data/fineweb_eng.txt",
+        default=f"{_data_root}/monolingual_training_data/fineweb_eng.txt",
         help="Output path for the raw text file",
     )
     parser.add_argument(

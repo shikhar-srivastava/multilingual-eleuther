@@ -8,7 +8,7 @@ Train 350M parameter models on FineWeb 1 (sample-10BT) with BPE and Unigram toke
 
 - HuggingFace `datasets` library installed (`pip install datasets`)
 - `tqdm` installed (`pip install tqdm`)
-- Access to eng_latn tokenizers at `/localdisk/ssrivas9/catherinearnett/monolingual-tokenizers/`
+- Access to eng_latn tokenizers at `/scratch/ssrivas9/catherinearnett/monolingual-tokenizers/`
 - 4 GPUs available for training
 
 ## Step 1: Download FineWeb

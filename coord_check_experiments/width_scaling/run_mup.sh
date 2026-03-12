@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-cd /localdisk/ssrivas9/multilingual-eleuther
+cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
 # Delete old logs if they exist
 echo "Cleaning old logs in coord_check_experiments/width_scaling/mup/out/..."

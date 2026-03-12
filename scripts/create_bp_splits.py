@@ -10,8 +10,8 @@ After generating files, update a JSON index in the codebase:
 
 Usage:
   python scripts/create_bp_splits.py \
-    --input_root /localdisk/ssrivas9/catherinearnett/monolingual_training_data \
-    --output_root /localdisk/ssrivas9/catherinearnett/monolingual_training_data_bp
+    --input_root /scratch/ssrivas9/catherinearnett/monolingual_training_data \
+    --output_root /scratch/ssrivas9/catherinearnett/monolingual_training_data_bp
 
 Notes:
 - BP sizes are interpreted in GiB (1024**3 bytes) for deterministic slicing.
@@ -23,7 +23,11 @@ import json
 import math
 import os
 import sys
+from pathlib import Path
 from typing import Dict, Tuple
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.local_config import get_data_root
 
 
 DATASET_TO_BP: Dict[str, float] = {
@@ -91,9 +95,10 @@ def build_paths(input_root: str, output_root: str, dataset: str, bp: float) -> T
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_root", type=str, required=True)
-    parser.add_argument("--output_root", type=str, required=True)
-    parser.add_argument("--codebase_root", type=str, default="/localdisk/ssrivas9/multilingual-eleuther")
+    _data_root = get_data_root()
+    parser.add_argument("--input_root", type=str, default=f"{_data_root}/monolingual_training_data")
+    parser.add_argument("--output_root", type=str, default=f"{_data_root}/monolingual_training_data_bp")
+    parser.add_argument("--codebase_root", type=str, default=str(Path(__file__).parent.parent))
     parser.add_argument("--decimal_gb", action="store_true", help="Use 1e9 bytes per GB instead of GiB (1024**3).")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
@@ -137,12 +142,14 @@ def main() -> None:
         else:
             print(f"[SKIP] Exists: {eval_out_path}")
 
+        # Store paths with ${DATA_ROOT} placeholder so the JSON stays portable.
+        data_root = get_data_root()
         index[dataset] = {
             "byte_premium": bp,
-            "train_path": train_out_path,
+            "train_path": train_out_path.replace(data_root, "${DATA_ROOT}"),
             "train_bytes": target_bytes,
             "eval_lines": n_eval_lines,
-            "eval_path": eval_out_path,
+            "eval_path": eval_out_path.replace(data_root, "${DATA_ROOT}"),
         }
 
     # Write/update index in codebase configs.

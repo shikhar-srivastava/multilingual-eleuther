@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-cd /localdisk/ssrivas9/multilingual-eleuther
+cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
 # Delete old plots if they exist
 echo "Cleaning old plots in coord_check_experiments/..."

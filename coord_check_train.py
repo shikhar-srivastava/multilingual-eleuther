@@ -152,7 +152,7 @@ def get_batch(data, block_size, batch_size, device):
 def prepare_shakespeare_data(data_dir=None):
     """Prepare Shakespeare character-level data."""
     if data_dir is None:
-        data_dir = '/localdisk/ssrivas9/multilingual-eleuther/data/shakespeare_char'
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'shakespeare_char')
     
     # Create data dir if needed
     os.makedirs(data_dir, exist_ok=True)

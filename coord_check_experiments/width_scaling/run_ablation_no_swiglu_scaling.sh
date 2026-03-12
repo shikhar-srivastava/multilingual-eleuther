@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Change to the root directory
-cd /localdisk/ssrivas9/multilingual-eleuther
+cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
 BASE_DIR="coord_check_experiments/width_scaling/ablation_no_swiglu_scaling"
 

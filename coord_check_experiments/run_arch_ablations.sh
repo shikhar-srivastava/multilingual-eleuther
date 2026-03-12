@@ -31,7 +31,7 @@ read -p "Press Enter to continue or Ctrl+C to cancel..."
 echo ""
 
 # Change to the project root
-cd /localdisk/ssrivas9/multilingual-eleuther
+cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
 # Experiment 1: Baseline
     echo "================================================================================"

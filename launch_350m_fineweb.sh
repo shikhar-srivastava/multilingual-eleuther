@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/local.env"
 TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_350m.sh"
 
 echo "[Config] Using training script: $TRAIN_SCRIPT"
@@ -13,7 +14,7 @@ TOKENIZERS=(bpe_unscaled)
 MAX_SEQ_LEN=1024
 TARGET_TOKENS=7000000000 #7B tokens
 EVAL_LINES=8000
-OUTPUT_ROOT="/scratch/ssrivas9/catherinearnett/monolingual_training_data_tokenized"
+OUTPUT_ROOT="${DATA_ROOT}/monolingual_training_data_tokenized"
 INDEX_PATH="${SCRIPT_DIR}/configs/monolingual_bp_index.json"
 
 tokenize_and_split_fn() {
@@ -36,25 +37,33 @@ tokenize_and_split_fn() {
   local full_file="${tok_dir}/${dataset}_${bp}_tokenized_full.txt"
   local eval_file="${tok_dir}/${dataset}_${bp}_eval_tokenized.txt"
 
-  # Step 1: Tokenize ALL raw text (full ~10BT)
-  echo "  [Step 1] Tokenizing full dataset: dataset=$dataset, tok=$tokenizer_type, vocab=$vocab"
-  python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
-    --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
-    --split train --max_seq_len $MAX_SEQ_LEN --max_segments -1 \
-    --prepend_cls True --include_sep True --shuffle False \
-    --index_path "$INDEX_PATH" --output_root "$OUTPUT_ROOT"
+  # Skip if the final train + eval splits already exist
+  if [[ -f "$tok_file" && -f "$eval_file" ]]; then
+    echo "  [Skip] Tokenized splits already exist: $tok_file"
+  else
+    # Step 1: Tokenize ALL raw text (full ~10BT) if not already done
+    if [[ -f "$full_file" ]]; then
+      echo "  [Step 1] Full tokenized file already exists: $full_file"
+    else
+      echo "  [Step 1] Tokenizing full dataset: dataset=$dataset, tok=$tokenizer_type, vocab=$vocab"
+      python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
+        --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
+        --split train --max_seq_len $MAX_SEQ_LEN --max_segments -1 \
+        --prepend_cls True --include_sep True --shuffle False \
+        --index_path "$INDEX_PATH" --output_root "$OUTPUT_ROOT"
+      # Rename to _full so tokenize_and_pack won't see it as already done on next run
+      mv "$tok_file" "$full_file"
+    fi
 
-  # Step 2: Rename full tokenized output, then split by 7B tokens
-  echo "  [Step 2] Splitting: first ${TARGET_TOKENS} tokens for train, last ${EVAL_LINES} lines for eval"
-  if [[ -f "$tok_file" ]]; then
-    mv "$tok_file" "$full_file"
+    # Step 2: Split by 7B tokens
+    echo "  [Step 2] Splitting: first ${TARGET_TOKENS} tokens for train, last ${EVAL_LINES} lines for eval"
+    python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
+      --input "$full_file" \
+      --train_output "$tok_file" \
+      --eval_output "$eval_file" \
+      --target_tokens $TARGET_TOKENS \
+      --eval_lines $EVAL_LINES
   fi
-  python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
-    --input "$full_file" \
-    --train_output "$tok_file" \
-    --eval_output "$eval_file" \
-    --target_tokens $TARGET_TOKENS \
-    --eval_lines $EVAL_LINES
 }
 
 for dataset in "${DATASETS[@]}"; do

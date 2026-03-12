@@ -16,9 +16,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/local.env"
+
 mup_mode_filter=${1:-all}
 
-TRAIN_SCRIPT="/localdisk/ssrivas9/multilingual-eleuther/monolingual_130m_mup.sh"
+TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_130m_mup.sh"
 
 echo "[Config] Using training script: $TRAIN_SCRIPT"
 echo "[Config] muP mode filter: $mup_mode_filter"
@@ -46,10 +49,10 @@ tokenize_fn() {
     local dataset=$1
     local tokenizer_type=$2
     local vocab=$3
-    python /localdisk/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+    python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
         --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
         --split train --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True --shuffle True
-    python /localdisk/ssrivas9/multilingual-eleuther/scripts/tokenize_and_pack.py \
+    python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
         --dataset "$dataset" --tokenizer_type "$tokenizer_type" --tokenizer_vocabulary "$vocab" \
         --split eval --max_seq_len $MAX_SEQ_LEN --max_segments -1 --prepend_cls True --include_sep True --shuffle False
 }

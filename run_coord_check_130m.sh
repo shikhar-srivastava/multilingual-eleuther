@@ -27,7 +27,8 @@ MAX_LENGTH=256  # Shorter for coord check speed
 VOCAB_SIZE=65   # Shakespeare char-level
 
 DATASET="shakespeare_char"
-DATA_DIR="/localdisk/ssrivas9/multilingual-eleuther/data/shakespeare_char"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="${SCRIPT_DIR}/data/shakespeare_char"
 
 echo "=============================================================================="
 echo "Coordinate Check for 130M Model Configuration"

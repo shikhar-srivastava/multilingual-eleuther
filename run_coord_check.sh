@@ -26,7 +26,8 @@ EVAL_ITERS=1
 
 # Data
 DATASET="shakespeare_char"
-DATA_DIR="/localdisk/ssrivas9/multilingual-eleuther/data/shakespeare_char"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="${SCRIPT_DIR}/data/shakespeare_char"
 
 echo "=============================================================================="
 echo "CompleteP Coordinate Check"
