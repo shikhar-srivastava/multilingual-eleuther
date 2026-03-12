@@ -56,6 +56,7 @@ class CSVLogger:
         """Log a dictionary of metrics. First call determines column order."""
         if self.file is None:
             self.fieldnames = list(metrics.keys())
+            os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
             self.file = open(self.filepath, 'w', newline='')
             self.writer = csv.DictWriter(self.file, fieldnames=self.fieldnames)
             self.writer.writeheader()
