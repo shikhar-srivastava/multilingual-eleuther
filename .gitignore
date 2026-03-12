@@ -27,3 +27,4 @@ mutransfer_experiments/completep/out/*
 --project
 --filter
 mono_350m_pre_*
+wandb/*
