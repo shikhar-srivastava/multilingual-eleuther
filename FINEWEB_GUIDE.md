@@ -65,41 +65,48 @@ bash monolingual_350m.sh pre fineweb_eng 32768 bpe_unscaled 6 29510
 
 Training data target: `target_bytes = BP × eng_ref_bytes` per tokenizer/vocab. For data-scarce languages (amh, urd), all available data is used and epochs are multiplied to compensate: `num_epochs = floor(target_bytes / actual_bytes)`.
 
-### 1. Download raw text (one-time per language)
+### 1. Download raw text (one-time)
 
-Amharic and Urdu: download everything (small datasets).
+All 4 languages in one script (each block is independently copy-pasteable). Amharic/Urdu download everything; Thai/Vietnamese are capped at `1.02 × BP × eng_ref_bytes`:
 
 ```bash
-python scripts/download_fineweb2.py --language amh
-python scripts/download_fineweb2.py --language urd
+bash download_fineweb2.sh
 ```
 
-Thai and Vietnamese: capped download to avoid fetching hundreds of GiB unnecessarily. The budget is `2 × BP × eng_ref_bytes` (2× safety margin). Compute from your actual English reference file:
+Or run each language individually:
 
 ```bash
-# Compute budget from English BPE vocab=98304 reference (largest ref = most conservative budget)
+# Amharic — downloads all available (~2.7 GiB)
+python scripts/download_fineweb2.py --language amh
+
+# Urdu — downloads all available (~22.5 GiB)
+python scripts/download_fineweb2.py --language urd
+
+# Thai — capped download (~88 GiB of ~322 GiB)
+source local.env
 ENG_REF="${DATA_ROOT}/monolingual_training_data_tokenized/bpe_eng_latn_98304_300mb_unscaled/fineweb_eng_1.0_tokenized.txt"
 ENG_BYTES=$(stat -c%s "$ENG_REF")
-
 python scripts/download_fineweb2.py --language tha \
-    --max_bytes $(python3 -c "import math; print(math.floor(2 * 2.74 * $ENG_BYTES))")
+    --max_bytes $(python3 -c "import math; print(math.floor(1.02 * 2.74 * $ENG_BYTES))")
 
+# Vietnamese — capped download (~43 GiB of ~403 GiB)
+source local.env
+ENG_REF="${DATA_ROOT}/monolingual_training_data_tokenized/bpe_eng_latn_98304_300mb_unscaled/fineweb_eng_1.0_tokenized.txt"
+ENG_BYTES=$(stat -c%s "$ENG_REF")
 python scripts/download_fineweb2.py --language vie \
-    --max_bytes $(python3 -c "import math; print(math.floor(2 * 1.35 * $ENG_BYTES))")
+    --max_bytes $(python3 -c "import math; print(math.floor(1.02 * 1.35 * $ENG_BYTES))")
 ```
 
-All outputs go to `${DATA_ROOT}/monolingual_training_data/fineweb2_{lang}.txt` by default.
+Outputs: `${DATA_ROOT}/monolingual_training_data/fineweb2_{lang}.txt`
 
 ### 2. Tokenize + split + train (full pipeline)
 
-The launch scripts handle download (with budget, skipping if file exists), tokenize, split, epoch computation, and training — for all 4 languages and all 4 vocab sizes.
+The launch scripts handle tokenize, split, epoch computation, and training for all 4 languages × 4 vocab sizes. **Download must be completed first** (step 1).
 
 ```bash
 bash launch_350m_fineweb2.sh           # BPE (bpe_unscaled)
 bash launch_350m_fineweb2_unigram.sh   # Unigram (unigram_unscaled)
 ```
-
-> **Note**: the BPE launch script requires the English BPE tokenized files. The Unigram launch script requires the English Unigram tokenized files (falls back to BPE if available). Run Part A first.
 
 ### 3. Tokenize + split only (no training)
 

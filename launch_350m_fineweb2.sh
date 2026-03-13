@@ -21,34 +21,15 @@ declare -A BYTE_PREMIUM_MAP=( [fineweb2_amh]=1.72 [fineweb2_tha]=2.74 [fineweb2_
 declare -A EVAL_LINES_MAP=( [fineweb2_amh]=13760 [fineweb2_tha]=21920 [fineweb2_urd]=13680 [fineweb2_vie]=10800 )
 declare -A LANG_CODE_MAP=( [fineweb2_amh]=amh [fineweb2_tha]=tha [fineweb2_urd]=urd [fineweb2_vie]=vie )
 
-# --- Download raw text files if needed (with byte budget) ---
-# Use the largest vocab's English ref to compute worst-case budget per language.
-# Budget = 2x the required tokenized bytes (safety margin for raw->tokenized ratio).
-WORST_VOCAB="${VOCABS[-1]}"
-DOWNLOAD_PREFIX="bpe"
-WORST_ENG_REF="${OUTPUT_ROOT}/${DOWNLOAD_PREFIX}_eng_latn_${WORST_VOCAB}_300mb_unscaled/fineweb_eng_1.0_tokenized.txt"
-if [[ ! -f "$WORST_ENG_REF" ]]; then
-  echo "[ERROR] English reference not found: $WORST_ENG_REF"
-  echo "Run the English FineWeb pipeline first."
-  exit 1
-fi
-WORST_ENG_BYTES=$(stat -c%s "$WORST_ENG_REF")
-echo "[Download] English ref (${DOWNLOAD_PREFIX} vocab=${WORST_VOCAB}): ${WORST_ENG_BYTES} bytes"
-
+# Verify raw text files exist (run download_fineweb2.sh first)
 for dataset in "${DATASETS[@]}"; do
   raw_file="${DATA_ROOT}/monolingual_training_data/${dataset}.txt"
-  if [[ -f "$raw_file" ]]; then
-    sz=$(stat -c%s "$raw_file")
-    echo "[Download] ${dataset}: raw file exists ($(python3 -c "print(f'{$sz/(1024**3):.2f}')") GiB)"
-    continue
+  if [[ ! -f "$raw_file" ]]; then
+    echo "[ERROR] Raw text file not found: $raw_file"
+    echo "Run download_fineweb2.sh first."
+    exit 1
   fi
-  bp="${BYTE_PREMIUM_MAP[$dataset]}"
-  lang="${LANG_CODE_MAP[$dataset]}"
-  max_bytes=$(python3 -c "import math; print(math.floor(2 * $bp * $WORST_ENG_BYTES))")
-  echo "[Download] ${dataset}: downloading with max_bytes=${max_bytes} (2 x BP=${bp} x eng_ref=${WORST_ENG_BYTES})"
-  python "${SCRIPT_DIR}/scripts/download_fineweb2.py" --language "$lang" --max_bytes "$max_bytes"
 done
-echo ""
 
 tokenize_and_split_fn() {
   local dataset=$1
