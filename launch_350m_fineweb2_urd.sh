@@ -7,9 +7,9 @@ TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_350m.sh"
 
 echo "[Config] Using training script: $TRAIN_SCRIPT"
 
-DATASETS=(fineweb2_amh fineweb2_tha fineweb2_urd fineweb2_vie)
-VOCABS=(8192 32768 65536 98304)
-TOKENIZERS=(unigram_unscaled)
+DATASETS=(fineweb2_urd)
+VOCABS=(8192 98304)
+TOKENIZERS=(bpe_unscaled unigram_unscaled)
 
 MAX_SEQ_LEN=1024
 OUTPUT_ROOT="${DATA_ROOT}/monolingual_training_data_tokenized"
@@ -57,7 +57,7 @@ tokenize_and_split_fn() {
   local eng_ref_file="${OUTPUT_ROOT}/${eng_tok_basename}/fineweb_eng_1.0_tokenized.txt"
   if [[ ! -f "$eng_ref_file" ]]; then
     echo "  [ERROR] English reference file not found: $eng_ref_file"
-    echo "  Run the English FineWeb pipeline first (launch_350m_fineweb_unigram.sh)."
+    echo "  Run the English FineWeb pipeline first (launch_350m_fineweb.sh)."
     return 1
   fi
   local eng_ref_bytes

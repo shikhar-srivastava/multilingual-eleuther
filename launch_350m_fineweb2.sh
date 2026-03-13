@@ -104,7 +104,11 @@ for dataset in "${DATASETS[@]}"; do
       # Compute dynamic epoch count
       local_bp="${BYTE_PREMIUM_MAP[$dataset]}"
       local_tok_dataset="${TOK_DATASET_MAP[$dataset]}"
-      local_prefix="bpe"
+      if [[ "$tok" == "bpe_unscaled" ]]; then
+        local_prefix="bpe"
+      else
+        local_prefix="unigram"
+      fi
       local_tok_basename="${local_prefix}_${local_tok_dataset}_${vocab}_300mb_unscaled"
       local_tok_dir="${OUTPUT_ROOT}/${local_tok_basename}"
       local_tok_file="${local_tok_dir}/${dataset}_${local_bp}_tokenized.txt"
