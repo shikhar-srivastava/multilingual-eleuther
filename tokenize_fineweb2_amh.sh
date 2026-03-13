@@ -21,14 +21,14 @@ python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
   --prepend_cls True --include_sep True --shuffle False \
   --index_path "$INDEX_PATH" --output_root "$OUTPUT_ROOT"
 
-mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-   "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
-
-python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
-  --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
-  --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-  --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
-  --target_bytes "$TARGET_BYTES" --eval_lines 13760
+# mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#    "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
+#
+# python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
+#   --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
+#   --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#   --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
+#   --target_bytes "$TARGET_BYTES" --eval_lines 13760
 
 
 # # ============================================================
@@ -105,14 +105,14 @@ python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
   --prepend_cls True --include_sep True --shuffle False \
   --index_path "$INDEX_PATH" --output_root "$OUTPUT_ROOT"
 
-mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-   "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
-
-python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
-  --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
-  --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-  --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
-  --target_bytes "$TARGET_BYTES" --eval_lines 13760
+# mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#    "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
+#
+# python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
+#   --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
+#   --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#   --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
+#   --target_bytes "$TARGET_BYTES" --eval_lines 13760
 
 
 # ============================================================
@@ -133,14 +133,14 @@ python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
   --prepend_cls True --include_sep True --shuffle False \
   --index_path "$INDEX_PATH" --output_root "$OUTPUT_ROOT"
 
-mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-   "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
-
-python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
-  --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
-  --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-  --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
-  --target_bytes "$TARGET_BYTES" --eval_lines 13760
+# mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#    "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
+#
+# python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
+#   --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
+#   --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#   --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
+#   --target_bytes "$TARGET_BYTES" --eval_lines 13760
 
 
 # # ============================================================
@@ -217,11 +217,11 @@ python "${SCRIPT_DIR}/scripts/tokenize_and_pack.py" \
   --prepend_cls True --include_sep True --shuffle False \
   --index_path "$INDEX_PATH" --output_root "$OUTPUT_ROOT"
 
-mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-   "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
-
-python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
-  --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
-  --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
-  --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
-  --target_bytes "$TARGET_BYTES" --eval_lines 13760
+# mv "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#    "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt"
+#
+# python "${SCRIPT_DIR}/scripts/split_tokenized.py" \
+#   --input  "${TOK_DIR}/fineweb2_amh_1.72_tokenized_full.txt" \
+#   --train_output "${TOK_DIR}/fineweb2_amh_1.72_tokenized.txt" \
+#   --eval_output  "${TOK_DIR}/fineweb2_amh_1.72_eval_tokenized.txt" \
+#   --target_bytes "$TARGET_BYTES" --eval_lines 13760
