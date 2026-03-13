@@ -116,7 +116,7 @@ for dataset in "${DATASETS[@]}"; do
       actual_bytes=$(stat -c%s "$local_tok_file")
 
       if (( actual_bytes < target_bytes )); then
-        NUM_EPOCHS=$(python3 -c "print($target_bytes // $actual_bytes)")
+        NUM_EPOCHS=$(python3 -c "print(min(20, $target_bytes // $actual_bytes))")
       else
         NUM_EPOCHS=1
       fi
