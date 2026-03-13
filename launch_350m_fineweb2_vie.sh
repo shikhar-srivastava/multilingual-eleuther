@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/local.env"
-TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_350m.sh"
+TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_350m_8gpu.sh"
 
 echo "[Config] Using training script: $TRAIN_SCRIPT"
 
