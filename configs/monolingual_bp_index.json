@@ -40,5 +40,33 @@
     "train_bytes": -1,
     "eval_lines": 8000,
     "eval_path": ""
+  },
+  "fineweb2_amh": {
+    "byte_premium": 1.72,
+    "train_path": "${DATA_ROOT}/monolingual_training_data/fineweb2_amh.txt",
+    "train_bytes": -1,
+    "eval_lines": 13760,
+    "eval_path": ""
+  },
+  "fineweb2_tha": {
+    "byte_premium": 2.74,
+    "train_path": "${DATA_ROOT}/monolingual_training_data/fineweb2_tha.txt",
+    "train_bytes": -1,
+    "eval_lines": 21920,
+    "eval_path": ""
+  },
+  "fineweb2_urd": {
+    "byte_premium": 1.71,
+    "train_path": "${DATA_ROOT}/monolingual_training_data/fineweb2_urd.txt",
+    "train_bytes": -1,
+    "eval_lines": 13680,
+    "eval_path": ""
+  },
+  "fineweb2_vie": {
+    "byte_premium": 1.35,
+    "train_path": "${DATA_ROOT}/monolingual_training_data/fineweb2_vie.txt",
+    "train_bytes": -1,
+    "eval_lines": 10800,
+    "eval_path": ""
   }
 }

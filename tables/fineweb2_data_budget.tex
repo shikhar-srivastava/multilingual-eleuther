@@ -1,0 +1,74 @@
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{geometry}
+\geometry{margin=0.75in}
+\usepackage{caption}
+\begin{document}
+
+\begin{table}[ht]
+\centering
+\caption{FineWeb-2 data budget for 350M model family (BPE, vocab=32768 reference).}
+\label{tab:fw2-budget-summary}
+\begin{tabular}{lcccc}
+\toprule
+ & \textbf{Amharic} & \textbf{Thai} & \textbf{Urdu} & \textbf{Vietnamese} \\
+ & (BP=1.72) & (BP=2.74) & (BP=1.71) & (BP=1.35) \\
+\midrule
+English ref (BPE 32768) & \multicolumn{4}{c}{31.11 GiB (33,408,050,712 bytes)} \\
+\midrule
+Required tokenized & 53.52 GiB & 85.25 GiB & 53.20 GiB & 42.00 GiB \\
+FW2 raw text available & 2.69 GiB & 321.88 GiB & 22.48 GiB & 402.69 GiB \\
+Coverage (raw/required) & 5\% & 378\% & 42\% & 959\% \\
+Sufficient? & No & Yes & No & Yes \\
+Epochs (compensated) & $\sim$19 & 1 & $\sim$2 & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{English 7B-token reference file sizes and per-language required tokenized bytes across all tokenizer configurations.}
+\label{tab:fw2-budget-full}
+\small
+\begin{tabular}{llrcccc}
+\toprule
+\textbf{Tokenizer} & \textbf{Vocab} & \textbf{Eng Ref (GiB)} & \textbf{amh (GiB)} & \textbf{tha (GiB)} & \textbf{urd (GiB)} & \textbf{vie (GiB)} \\
+\midrule
+BPE & 8,192 & 29.43 & 50.62 & 80.65 & 50.33 & 39.73 \\
+BPE & 32,768 & 31.11 & 53.52 & 85.25 & 53.20 & 42.00 \\
+BPE & 65,536 & 31.32 & 53.88 & 85.83 & 53.57 & 42.29 \\
+BPE & 98,304 & 31.38 & 53.97 & 85.98 & 53.66 & 42.36 \\
+\midrule
+Unigram & 8,192 & 21.50 & 36.98 & 58.90 & 36.76 & 29.02 \\
+Unigram & 32,768 & 23.51 & 40.44 & 64.42 & 40.21 & 31.74 \\
+Unigram & 65,536 & 23.72 & 40.79 & 64.99 & 40.56 & 32.02 \\
+Unigram & 98,304 & 23.75 & 40.85 & 65.07 & 40.61 & 32.06 \\
+\midrule
+\multicolumn{3}{l}{\textbf{FW2 raw text available}} & 2.69 & 321.88 & 22.48 & 402.69 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Compensatory epoch multipliers per tokenizer configuration (floor of required/available).}
+\label{tab:fw2-epochs}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Tokenizer} & \textbf{Vocab} & \textbf{amh} & \textbf{tha} & \textbf{urd} & \textbf{vie} \\
+\midrule
+BPE & 8,192 & 18 & 1 & 2 & 1 \\
+BPE & 32,768 & 19 & 1 & 2 & 1 \\
+BPE & 65,536 & 20 & 1 & 2 & 1 \\
+BPE & 98,304 & 20 & 1 & 2 & 1 \\
+\midrule
+Unigram & 8,192 & 13 & 1 & 1 & 1 \\
+Unigram & 32,768 & 15 & 1 & 1 & 1 \\
+Unigram & 65,536 & 15 & 1 & 1 & 1 \\
+Unigram & 98,304 & 15 & 1 & 1 & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

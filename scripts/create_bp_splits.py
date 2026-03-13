@@ -37,6 +37,10 @@ DATASET_TO_BP: Dict[str, float] = {
     "amh_ethi": 1.72,
     "vie_latn": 1.35,
     "fineweb_eng": 1.0,
+    "fineweb2_amh": 1.72,
+    "fineweb2_tha": 2.74,
+    "fineweb2_urd": 1.71,
+    "fineweb2_vie": 1.35,
 }
 
 

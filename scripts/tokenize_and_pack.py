@@ -28,7 +28,11 @@ from utils.local_config import get_data_root
 _DATA_ROOT = get_data_root()
 
 VALID_VOCABS = {8192, 16384, 32768, 49152, 65536, 81920, 98304, 114688, 262144}
-DATASETS = ["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn", "fineweb_eng"]
+DATASETS = [
+    "eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn",
+    "fineweb_eng",
+    "fineweb2_amh", "fineweb2_tha", "fineweb2_urd", "fineweb2_vie",
+]
 
 TOKENIZER_ROOTS = {
     "bpe_unscaled": f"{_DATA_ROOT}/monolingual-tokenizers/bpe_unscaled_tokenizers",
@@ -37,6 +41,10 @@ TOKENIZER_ROOTS = {
 
 TOKENIZER_DATASET_MAP = {
     "fineweb_eng": "eng_latn",
+    "fineweb2_amh": "amh_ethi",
+    "fineweb2_tha": "tha_thai",
+    "fineweb2_urd": "urd_arab",
+    "fineweb2_vie": "vie_latn",
 }
 
 

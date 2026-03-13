@@ -471,9 +471,12 @@ def parse_args(args):
     
     # Monolingual dataset selection
     parser.add_argument("--monolingual-dataset", type=str, required=True,
-                        choices=["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn", "fineweb_eng"],
+                        choices=["eng_latn", "tha_thai", "urd_arab", "amh_ethi", "vie_latn",
+                                 "fineweb_eng",
+                                 "fineweb2_amh", "fineweb2_tha", "fineweb2_urd", "fineweb2_vie"],
                         help="Monolingual dataset to use for training. "
-                             "fineweb_eng uses eng_latn tokenizers with FineWeb data.")
+                             "fineweb_eng uses eng_latn tokenizers with FineWeb data. "
+                             "fineweb2_* use corresponding language tokenizers with FineWeb-2 data.")
     
     # Hugging Face Hub integration flags
     parser.add_argument("--hf_repo_name", type=str, default=None,
@@ -556,7 +559,13 @@ def evaluate_model(model, tokenizer, pad_idx, global_rank, world_size, device, b
             "unigram_unscaled": f"{_DATA_ROOT}/monolingual-tokenizers/unigram_unscaled_tokenizers",
         }
         tok_root = tok_root_map[args.tokenizer_type]
-        _eval_tok_ds_map = {"fineweb_eng": "eng_latn"}
+        _eval_tok_ds_map = {
+            "fineweb_eng": "eng_latn",
+            "fineweb2_amh": "amh_ethi",
+            "fineweb2_tha": "tha_thai",
+            "fineweb2_urd": "urd_arab",
+            "fineweb2_vie": "vie_latn",
+        }
         _eval_tok_ds = _eval_tok_ds_map.get(monolingual_dataset, monolingual_dataset)
         tok_file = (f"bpe_{_eval_tok_ds}_{args.tokenizer_vocabulary}_300mb_unscaled.json"
                     if args.tokenizer_type == "bpe_unscaled"
@@ -700,7 +709,13 @@ def main(args):
         "bpe_unscaled": f"{_DATA_ROOT}/monolingual-tokenizers/bpe_unscaled_tokenizers",
         "unigram_unscaled": f"{_DATA_ROOT}/monolingual-tokenizers/unigram_unscaled_tokenizers",
     }
-    _tok_dataset_map = {"fineweb_eng": "eng_latn"}
+    _tok_dataset_map = {
+        "fineweb_eng": "eng_latn",
+        "fineweb2_amh": "amh_ethi",
+        "fineweb2_tha": "tha_thai",
+        "fineweb2_urd": "urd_arab",
+        "fineweb2_vie": "vie_latn",
+    }
     if args.tokenizer_type in tok_root_map:
         tok_root = tok_root_map[args.tokenizer_type]
         _tok_ds = _tok_dataset_map.get(args.monolingual_dataset, args.monolingual_dataset)

@@ -16,9 +16,8 @@ Two splitting modes (exactly one of --target_tokens or --target_bytes must be gi
       Use this for other languages (future).
 
 In both modes, the last --eval_lines lines from the FULL input are written
-to the eval output.  Since train lines come from the beginning and eval
-lines from the end, they are guaranteed disjoint as long as the input is
-large enough.
+to the eval output.  Train extraction is capped at (total_lines - eval_lines)
+to guarantee disjointness even when the dataset is smaller than the target.
 
 Usage (English / token-count):
     python scripts/split_tokenized.py \
@@ -51,8 +50,12 @@ def count_tokens_in_line(line: str) -> int:
     return stripped.count(" ") + 1
 
 
-def extract_train_by_tokens(input_path: str, output_path: str, target_tokens: int) -> tuple:
+def extract_train_by_tokens(input_path: str, output_path: str, target_tokens: int,
+                            max_train_lines: int = -1) -> tuple:
     """Write lines from the start of input until target_tokens is reached.
+
+    Stops early if max_train_lines (>0) non-empty lines have been written,
+    ensuring the train region does not overlap with the eval tail.
 
     Returns (total_tokens_written, total_lines_written).
     """
@@ -64,6 +67,8 @@ def extract_train_by_tokens(input_path: str, output_path: str, target_tokens: in
             n_tok = count_tokens_in_line(line)
             if n_tok == 0:
                 continue
+            if 0 < max_train_lines <= total_lines:
+                break
             fout.write(line if line.endswith("\n") else line + "\n")
             total_tokens += n_tok
             total_lines += 1
@@ -74,8 +79,12 @@ def extract_train_by_tokens(input_path: str, output_path: str, target_tokens: in
     return total_tokens, total_lines
 
 
-def extract_train_by_bytes(input_path: str, output_path: str, target_bytes: int) -> tuple:
+def extract_train_by_bytes(input_path: str, output_path: str, target_bytes: int,
+                           max_train_lines: int = -1) -> tuple:
     """Write lines from the start of input until file size reaches target_bytes.
+
+    Stops early if max_train_lines (>0) non-empty lines have been written,
+    ensuring the train region does not overlap with the eval tail.
 
     Returns (total_tokens_written, total_lines_written, total_bytes_written).
     """
@@ -88,6 +97,8 @@ def extract_train_by_bytes(input_path: str, output_path: str, target_bytes: int)
             n_tok = count_tokens_in_line(line)
             if n_tok == 0:
                 continue
+            if 0 < max_train_lines <= total_lines:
+                break
             encoded = line if line.endswith("\n") else line + "\n"
             line_bytes = len(encoded.encode("utf-8"))
             if total_bytes + line_bytes > target_bytes and total_lines > 0:
@@ -144,11 +155,29 @@ def main() -> None:
     os.makedirs(os.path.dirname(args.train_output) or ".", exist_ok=True)
     os.makedirs(os.path.dirname(args.eval_output) or ".", exist_ok=True)
 
+    # --- Count total non-empty lines to enforce disjointness ---
+    print(f"Counting non-empty lines in {args.input} ...")
+    total_nonempty = 0
+    with open(args.input, "r", encoding="utf-8") as fin:
+        for line in fin:
+            if line.strip():
+                total_nonempty += 1
+    print(f"Total non-empty lines: {total_nonempty:,}")
+
+    max_train_lines = max(total_nonempty - args.eval_lines, 0)
+    if max_train_lines == 0:
+        print("Warning: file has fewer non-empty lines than eval_lines; no training data.",
+              file=sys.stderr)
+    else:
+        print(f"Train line cap for disjointness: {max_train_lines:,} "
+              f"(total {total_nonempty:,} - eval {args.eval_lines})")
+
     # --- Extract training split ---
     if args.target_tokens is not None:
         print(f"Extracting train split: first {args.target_tokens:,} tokens from {args.input}")
         train_tokens, train_lines = extract_train_by_tokens(
-            args.input, args.train_output, args.target_tokens
+            args.input, args.train_output, args.target_tokens,
+            max_train_lines=max_train_lines,
         )
         train_bytes = os.path.getsize(args.train_output)
         print(f"Train split: {train_lines:,} lines, {train_tokens:,} tokens")
@@ -156,7 +185,8 @@ def main() -> None:
     else:
         print(f"Extracting train split: first {args.target_bytes:,} bytes from {args.input}")
         train_tokens, train_lines, train_bytes = extract_train_by_bytes(
-            args.input, args.train_output, args.target_bytes
+            args.input, args.train_output, args.target_bytes,
+            max_train_lines=max_train_lines,
         )
         print(f"Train split: {train_lines:,} lines, {train_tokens:,} tokens")
         print(f"Train file size: {train_bytes:,} bytes ({train_bytes / (1024**3):.4f} GiB)")
