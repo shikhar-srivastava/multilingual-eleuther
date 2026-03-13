@@ -3,11 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/local.env"
-TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_350m.sh"
+TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_350m_8gpu.sh"
 
 echo "[Config] Using training script: $TRAIN_SCRIPT"
 
 DATASETS=(fineweb_eng)
+MASTER_PORT=29510
 VOCABS=(8192 32768 65536 98304)
 TOKENIZERS=(unigram_unscaled)
 
@@ -73,7 +74,7 @@ for dataset in "${DATASETS[@]}"; do
       tokenize_and_split_fn "$dataset" "$tok" "$vocab"
 
       echo "[Train] dataset=$dataset, tok=$tok, vocab=$vocab"
-      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 29510
+      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 $MASTER_PORT
     done
   done
 done

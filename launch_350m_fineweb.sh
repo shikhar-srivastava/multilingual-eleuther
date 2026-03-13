@@ -16,6 +16,7 @@ TARGET_TOKENS=7000000000 #7B tokens
 EVAL_LINES=8000
 OUTPUT_ROOT="${DATA_ROOT}/monolingual_training_data_tokenized"
 INDEX_PATH="${SCRIPT_DIR}/configs/monolingual_bp_index.json"
+MASTER_PORT=29510
 
 tokenize_and_split_fn() {
   local dataset=$1
@@ -73,7 +74,7 @@ for dataset in "${DATASETS[@]}"; do
       tokenize_and_split_fn "$dataset" "$tok" "$vocab"
 
       echo "[Train] dataset=$dataset, tok=$tok, vocab=$vocab"
-      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 29510
+      bash "$TRAIN_SCRIPT" pre "$dataset" "$vocab" "$tok" 6 $MASTER_PORT
     done
   done
 done
