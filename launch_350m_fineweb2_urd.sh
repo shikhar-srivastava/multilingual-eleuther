@@ -8,7 +8,7 @@ TRAIN_SCRIPT="${SCRIPT_DIR}/monolingual_350m.sh"
 echo "[Config] Using training script: $TRAIN_SCRIPT"
 
 DATASETS=(fineweb2_urd)
-VOCABS=(8192 98304)
+VOCABS=(32768 65536)
 TOKENIZERS=(bpe_unscaled unigram_unscaled)
 
 MAX_SEQ_LEN=1024
